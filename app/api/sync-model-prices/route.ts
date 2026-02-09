@@ -141,8 +141,8 @@ export async function POST(request: Request) {
       .json()
       .catch(() => ({} as { project?: string | null; usedModels?: string[] }));
     const project = reqBody?.project ?? null;
-    const inputUsedModels = Array.isArray(reqBody?.usedModels)
-      ? Array.from(new Set(reqBody.usedModels.map((m) => String(m || "").trim()).filter(Boolean)))
+    const inputUsedModels: string[] = Array.isArray(reqBody?.usedModels)
+      ? Array.from(new Set<string>(reqBody.usedModels.map((m: unknown) => String(m || "").trim()).filter(Boolean)))
       : [];
 
     // 从数据库获取最新的 route 值作为 API Key

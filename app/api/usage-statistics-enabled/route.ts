@@ -14,6 +14,25 @@ function authHeaders() {
   };
 }
 
+let usageStatsCache: { value: boolean; updatedAt: number } | null = null;
+
+async function fetchWithTimeoutAndRetry(url: string, init?: RequestInit, timeoutMs = 8_000, retries = 1) {
+  let lastError: unknown;
+  for (let i = 0; i <= retries; i++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      lastError = error;
+      if (i === retries) break;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
+}
+
 async function handleToggle(request: Request) {
   try {
     assertEnv();
@@ -28,7 +47,7 @@ async function handleToggle(request: Request) {
       return NextResponse.json({ error: "Missing boolean 'value'" }, { status: 400 });
     }
 
-    const res = await fetch(endpoint(), {
+    const res = await fetchWithTimeoutAndRetry(endpoint(), {
       method: "PATCH",
       headers: authHeaders(),
       body: JSON.stringify({ value })
@@ -37,7 +56,7 @@ async function handleToggle(request: Request) {
     if (!res.ok) {
       return NextResponse.json({ error: res.statusText }, { status: res.status });
     }
-
+    usageStatsCache = { value, updatedAt: Date.now() };
     return NextResponse.json({ "usage-statistics-enabled": value }, { status: 200 });
   } catch (error) {
     console.error("/api/usage-statistics-enabled POST failed:", error);
@@ -53,15 +72,28 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch(endpoint(), { headers: authHeaders(), cache: "no-store" });
+    const res = await fetchWithTimeoutAndRetry(endpoint(), { headers: authHeaders(), cache: "no-store" });
     if (!res.ok) {
       return NextResponse.json({ error: res.statusText }, { status: res.status });
     }
     const data = await res.json();
+    const enabled = Boolean(data?.["usage-statistics-enabled"]);
+    usageStatsCache = { value: enabled, updatedAt: Date.now() };
     return NextResponse.json(data, { status: 200 });
   } catch (error) {
     console.error("/api/usage-statistics-enabled GET failed:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    if (usageStatsCache) {
+      return NextResponse.json(
+        {
+          "usage-statistics-enabled": usageStatsCache.value,
+          stale: true,
+          degraded: true,
+          updatedAt: usageStatsCache.updatedAt
+        },
+        { status: 200 }
+      );
+    }
+    return NextResponse.json({ "usage-statistics-enabled": false, stale: true, degraded: true }, { status: 200 });
   }
 }
 

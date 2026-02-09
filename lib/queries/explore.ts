@@ -47,6 +47,7 @@ function normalizeMaxPoints(value?: number | null) {
 export async function getExplorePoints(
   daysInput?: number,
   opts?: {
+    project?: string | null;
     maxPoints?: number | null;
     start?: string | Date | null;
     end?: string | Date | null;
@@ -68,6 +69,7 @@ export async function getExplorePoints(
 
   const baseWhereParts: any[] = [gte(usageRecords.occurredAt, since)];
   if (until) baseWhereParts.push(lte(usageRecords.occurredAt, until));
+  if (opts?.project && opts.project !== "all") baseWhereParts.push(eq(usageRecords.project, opts.project));
 
   const whereParts: any[] = [...baseWhereParts];
   if (opts?.route) whereParts.push(eq(usageRecords.route, opts.route));

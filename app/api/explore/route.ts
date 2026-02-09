@@ -13,7 +13,7 @@ const EXPLORE_CACHE_TTL_MS = 30_000;
 const EXPLORE_CACHE_MAX_ENTRIES = 100;
 const exploreCache = new Map<string, CachedExplore>();
 
-function makeCacheKey(input: { days?: number; maxPoints?: number; start?: string | null; end?: string | null; route?: string | null; name?: string | null; filterInvalid?: boolean }) {
+function makeCacheKey(input: { days?: number; maxPoints?: number; start?: string | null; end?: string | null; route?: string | null; name?: string | null; project?: string | null; filterInvalid?: boolean }) {
   return JSON.stringify({
     days: input.days ?? null,
     maxPoints: input.maxPoints ?? null,
@@ -21,6 +21,7 @@ function makeCacheKey(input: { days?: number; maxPoints?: number; start?: string
     end: input.end ?? null,
     route: input.route ?? null,
     name: input.name ?? null,
+    project: input.project ?? null,
     filterInvalid: input.filterInvalid ?? true
   });
 }
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
     const maxPointsParam = searchParams.get("maxPoints");
     const start = searchParams.get("start");
     const end = searchParams.get("end");
+    const project = searchParams.get("project");
     const route = searchParams.get("route");
     const name = searchParams.get("name");
 
@@ -63,13 +65,13 @@ export async function GET(request: Request) {
     const maxPoints = maxPointsParam ? Number.parseInt(maxPointsParam, 10) : undefined;
     const filterInvalid = searchParams.get("filterInvalid") !== "0";
 
-    const cacheKey = makeCacheKey({ days, maxPoints, start, end, route, name, filterInvalid });
+    const cacheKey = makeCacheKey({ days, maxPoints, start, end, route, name, project, filterInvalid });
     const cached = getCached(cacheKey);
     if (cached) {
       return NextResponse.json(cached, { status: 200 });
     }
 
-    const payload = await getExplorePoints(days, { maxPoints, start, end, route, name, filterInvalid });
+    const payload = await getExplorePoints(days, { maxPoints, start, end, route, name, project, filterInvalid });
     setCached(cacheKey, payload);
     return NextResponse.json(payload, { status: 200 });
   } catch (error) {

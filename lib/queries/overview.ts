@@ -84,7 +84,7 @@ function normalizePageSize(value?: number | null) {
 
 export async function getOverview(
   daysInput?: number,
-  opts?: { model?: string | null; route?: string | null; source?: string | null; name?: string | null; page?: number | null; pageSize?: number | null; start?: string | Date | null; end?: string | Date | null; timezone?: string | null }
+  opts?: { project?: string | null; model?: string | null; route?: string | null; source?: string | null; name?: string | null; page?: number | null; pageSize?: number | null; start?: string | Date | null; end?: string | Date | null; timezone?: string | null }
 ): Promise<{ overview: UsageOverview; empty: boolean; days: number; meta: OverviewMeta; filters: { models: string[]; routes: string[]; sources: string[]; names: string[] }; timezone: string; lastSyncAt: string | null }> {
   const startDate = parseDateInput(opts?.start);
   const endDate = parseDateInput(opts?.end);
@@ -99,6 +99,7 @@ export async function getOverview(
 
   const baseWhereParts: any[] = [gte(usageRecords.occurredAt, since)];
   if (until) baseWhereParts.push(lte(usageRecords.occurredAt, until));
+  if (opts?.project && opts.project !== "all") baseWhereParts.push(eq(usageRecords.project, opts.project));
   const baseWhere = baseWhereParts.length ? and(...baseWhereParts) : undefined;
 
   const filterWhereParts: any[] = [...baseWhereParts];

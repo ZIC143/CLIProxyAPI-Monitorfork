@@ -15,6 +15,7 @@ import { formatNumberWithCommas } from "@/lib/utils";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { enUS, ja, ko, zhCN } from "date-fns/locale";
+import { fetchProjectOptions } from "@/lib/projects-client";
 
 type UsageRecord = {
   id: number;
@@ -315,6 +316,8 @@ export default function RecordsPage() {
   const [appliedSource, setAppliedSource] = useState<string>("");
   const [appliedStart, setAppliedStart] = useState<string>("");
   const [appliedEnd, setAppliedEnd] = useState<string>("");
+  const [project, setProject] = useState<string>("all");
+  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; label: string }>>([]);
 
   const [sortKeys, setSortKeys] = useState<SortKey[]>([{ field: "occurredAt", order: "desc" }]);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -522,12 +525,13 @@ export default function RecordsPage() {
       if (appliedModel) params.set("model", appliedModel);
       if (appliedRoute) params.set("route", appliedRoute);
       if (appliedSource) params.set("source", appliedSource);
+      if (project !== "all") params.set("project", project);
       if (appliedStart) params.set("start", new Date(appliedStart).toISOString());
       if (appliedEnd) params.set("end", new Date(appliedEnd).toISOString());
       if (includeFilters) params.set("includeFilters", "1");
       return params;
     },
-    [sortKeys, appliedModel, appliedRoute, appliedSource, appliedStart, appliedEnd]
+    [sortKeys, appliedModel, appliedRoute, appliedSource, appliedStart, appliedEnd, project]
   );
 
   const fetchRecords = useCallback(
@@ -658,6 +662,34 @@ export default function RecordsPage() {
   useEffect(() => {
     resetAndFetch(true);
   }, [resetAndFetch]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedProject = window.localStorage.getItem("projectSelection");
+    if (savedProject) setProject(savedProject);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("projectSelection", project);
+  }, [project]);
+
+  useEffect(() => {
+    let active = true;
+    const loadProjects = async () => {
+      try {
+        const list = await fetchProjectOptions();
+        if (!active) return;
+        setProjectOptions(list);
+      } catch {
+        if (active) setProjectOptions([]);
+      }
+    };
+    loadProjects();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sentinelRef.current) return;
@@ -1005,6 +1037,17 @@ export default function RecordsPage() {
           <p className="text-base text-slate-400">展示模型调用明细</p>
         </div>
         <div className="flex items-center gap-3 text-sm text-slate-300">
+          <select
+            value={project}
+            onChange={(event) => setProject(event.target.value)}
+            className="w-28 rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-sm text-slate-200 hover:border-slate-500"
+            title="选择项目"
+          >
+            <option value="all">全部项目</option>
+            {projectOptions.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
           <button
             onClick={async () => {
               const inserted = await doSync();

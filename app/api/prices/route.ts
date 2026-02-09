@@ -15,6 +15,8 @@ const priceSchema = z.object({
 
 export const runtime = "nodejs";
 
+let pricesCache: { value: Array<{ model: string; inputPricePer1M: number; cachedInputPricePer1M: number; outputPricePer1M: number }>; updatedAt: number } | null = null;
+
 function ensureDbEnv() {
   if (!config.postgresUrl) {
     throw new Error("DATABASE_URL is missing");
@@ -31,10 +33,14 @@ export async function GET() {
       cachedInputPricePer1M: Number(row.cachedInputPricePer1M),
       outputPricePer1M: Number(row.outputPricePer1M)
     }));
+    pricesCache = { value: normalized, updatedAt: Date.now() };
     return NextResponse.json(normalized, { status: 200 });
   } catch (error) {
     console.error("/api/prices GET failed:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    if (pricesCache) {
+      return NextResponse.json(pricesCache.value, { status: 200 });
+    }
+    return NextResponse.json([], { status: 200 });
   }
 }
 

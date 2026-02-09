@@ -3,6 +3,7 @@
 import { forwardRef, startTransition, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ComposedChart, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCompactNumber, formatNumberWithCommas } from "@/lib/utils";
+import { fetchProjectOptions } from "@/lib/projects-client";
 
 type ExplorePoint = {
   ts: number;
@@ -506,6 +507,8 @@ export default function ExplorePage() {
   const [nameInput, setNameInput] = useState("");
   const [appliedRoute, setAppliedRoute] = useState("");
   const [appliedName, setAppliedName] = useState("");
+  const [project, setProject] = useState<string>("all");
+  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; label: string }>>([]);
   
   // 堆叠面积图开关
   const [showStackedArea, setShowStackedArea] = useState(true);
@@ -560,6 +563,34 @@ export default function ExplorePage() {
       console.warn("Failed to load global rangeSelection", err);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedProject = window.localStorage.getItem("projectSelection");
+    if (savedProject) setProject(savedProject);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("projectSelection", project);
+  }, [project]);
+
+  useEffect(() => {
+    let active = true;
+    const loadProjects = async () => {
+      try {
+        const list = await fetchProjectOptions();
+        if (!active) return;
+        setProjectOptions(list);
+      } catch {
+        if (active) setProjectOptions([]);
+      }
+    };
+    loadProjects();
+    return () => {
+      active = false;
+    };
   }, []);
 
 
@@ -1262,6 +1293,7 @@ export default function ExplorePage() {
         } else {
           params.set("days", String(rangeDays));
         }
+        if (project !== "all") params.set("project", project);
         if (appliedRoute) params.set("route", appliedRoute);
         if (appliedName) params.set("name", appliedName);
         if (!filterInvalidPoints) params.set("filterInvalid", "0");
@@ -1297,7 +1329,7 @@ export default function ExplorePage() {
     return () => {
       cancelled = true;
     };
-  }, [rangeMode, customStart, customEnd, rangeDays, appliedRoute, appliedName, filterInvalidPoints]);
+  }, [rangeMode, customStart, customEnd, rangeDays, appliedRoute, appliedName, project, filterInvalidPoints]);
 
   const models = useMemo(() => {
     const set = new Set<string>();
@@ -1627,6 +1659,17 @@ export default function ExplorePage() {
         </div>
         <div className="flex flex-col items-start gap-2 text-sm text-slate-300 md:items-start">
           <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
+              className="w-28 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-sm text-slate-200 hover:border-slate-500"
+              title="选择项目"
+            >
+              <option value="all">全部项目</option>
+              {projectOptions.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
             {[7, 14, 30].map((days) => (
               <button
                 key={days}

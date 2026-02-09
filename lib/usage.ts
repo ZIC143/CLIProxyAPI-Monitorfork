@@ -92,7 +92,7 @@ export function parseUsagePayload(json: unknown): UsageResponse {
   return responseSchema.parse(json);
 }
 
-export function toUsageRecords(payload: UsageResponse, pulledAt: Date = new Date()): UsageRecordInsert[] {
+export function toUsageRecords(payload: UsageResponse, pulledAt: Date = new Date(), project = ""): UsageRecordInsert[] {
   const apis = payload.usage?.apis as Record<string, ApiParsed> | undefined;
   if (!apis) return [];
 
@@ -113,6 +113,7 @@ export function toUsageRecords(payload: UsageResponse, pulledAt: Date = new Date
           rows.push({
             occurredAt,
             syncedAt: pulledAt,
+            project,
             route,
             source: parseDetailSource(detail),
             authIndex: parseDetailAuthIndex(detail),

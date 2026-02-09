@@ -17,21 +17,30 @@
 1. Fork 本仓库，创建 Vercel 项目并关联
 2. 在 Vercel 环境变量中填写：
 
-	| 环境变量 | 说明 | 备注 |
-	|---|---|---|
-	| CLIPROXY_SECRET_KEY | 登录 CLIProxyAPI 后台管理界面的密钥 | 无 |
-	| CLIPROXY_API_BASE_URL | 自部署的 CLIProxyAPI 根地址 | 如 `https://your-domain.com/` |
-	| USAGE_API_BASE_URL | usage 数据源接口 | 可选；不填时沿用 `CLIPROXY_API_BASE_URL`，接 adapter 时可单独指向 |
-	| DATABASE_URL | 数据库连接串（仅支持 Postgres） | 可直接使用 Neon |
-	| DATABASE_DRIVER | `pg` 或 `neon` | 可选；默认自动检测 |
-	| DATABASE_CA | DB 服务端 CA 证书 | 可选；PEM 原始内容或 Base64 编码均可 |
-	| PASSWORD | 访问密码，同时用于调用 `/api/sync` | 可选；留空默认使用 `CLIPROXY_SECRET_KEY` |
-	| CRON_SECRET | 使用 Vercel Cron 时需填写 | 任意字符串均可；建议长度 ≥ 16 |
+		| 环境变量 | 说明 | 备注 |
+		|---|---|---|
+		| CLIPROXY_SECRET_KEY | 登录 CLIProxyAPI 后台管理界面的密钥 | 无 |
+		| CLIPROXY_API_BASE_URL | 自部署的 CLIProxyAPI 根地址 | 如 `https://your-domain.com/` |
+		| USAGE_API_BASE_URL | usage 数据源接口 | 可选；不填时沿用 `CLIPROXY_API_BASE_URL`，接 adapter 时可单独指向 |
+		| CLIPROXY_SECRET_KEYS | 多项目密钥列表（逗号分隔） | 与 `CLIPROXY_API_BASE_URLS` 按顺序一一对应；配置后优先于单值变量 |
+		| CLIPROXY_API_BASE_URLS | 多项目根地址列表（逗号分隔） | 与 `CLIPROXY_SECRET_KEYS` 按顺序一一对应；配置后优先于单值变量 |
+		| DATABASE_URL | 数据库连接串（仅支持 Postgres） | 可直接使用 Neon |
+		| DATABASE_DRIVER | `pg` 或 `neon` | 可选；默认自动检测 |
+		| DATABASE_CA | DB 服务端 CA 证书 | 可选；PEM 原始内容或 Base64 编码均可 |
+		| PASSWORD | 访问密码，同时用于调用 `/api/sync` | 可选；留空默认使用 `CLIPROXY_SECRET_KEY` |
+		| CRON_SECRET | 使用 Vercel Cron 时需填写 | 任意字符串均可；建议长度 ≥ 16 |
+
+> 多项目模式说明：
+>
+> - `CLIPROXY_API_BASE_URLS` 与 `CLIPROXY_SECRET_KEYS` 使用逗号分隔并按顺序配对。
+> - 项目 ID 由每个项目根地址哈希生成，地址顺序变更不会影响同一地址的项目 ID。
+> - 不传 `project` 查询参数时，各统计接口默认返回全部项目汇总。
+> - `/api/management-url` 固定返回主项目地址（列表中的第一个项目）。
 
 3. 部署后，可通过以下方式自动同步上游使用数据：
 
-	- 默认启用 Vercel Cron（ Pro 可设每小时，Hobby 每天同步一次，请见 [vercel.json](https://github.com/sxjeru/CLIProxyAPI-Monitor/blob/main/vercel.json) ）
-	- Cloudflare Worker / 其他定时器定期请求同步：可见 [cf-worker-sync.js](https://github.com/sxjeru/CLIProxyAPI-Monitor/blob/main/cf-worker-sync.js)
+		- 默认启用 Vercel Cron（ Pro 可设每小时，Hobby 每天同步一次，请见 [vercel.json](https://github.com/sxjeru/CLIProxyAPI-Monitor/blob/main/vercel.json) ）
+		- Cloudflare Worker / 其他定时器定期请求同步：可见 [cf-worker-sync.js](https://github.com/sxjeru/CLIProxyAPI-Monitor/blob/main/cf-worker-sync.js)
 
 ## 预览
 

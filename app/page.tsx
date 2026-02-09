@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber, formatCompactNumber, formatNumberWithComm
 import { AlertTriangle, Info, LucideIcon, Activity, Save, RefreshCw, Moon, Sun, Pencil, Trash2, Maximize2, CalendarRange, X, DollarSign, Search, ChevronDown } from "lucide-react";
 import type { ModelPrice, UsageOverview, UsageSeriesPoint } from "@/lib/types";
 import { Modal } from "@/app/components/Modal";
+import { fetchProjectOptions } from "@/lib/projects-client";
 
 // 同步状态类型定义
 type SyncStatus = 
@@ -179,6 +180,8 @@ export default function DashboardPage() {
   const [filterModelInput, setFilterModelInput] = useState("");
   const [filterRouteInput, setFilterRouteInput] = useState("");
   const [filterNameInput, setFilterNameInput] = useState("");
+  const [project, setProject] = useState<string>("all");
+  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [filterModel, setFilterModel] = useState<string | undefined>(undefined);
   const [filterRoute, setFilterRoute] = useState<string | undefined>(undefined);
   const [filterName, setFilterName] = useState<string | undefined>(undefined);
@@ -256,6 +259,33 @@ export default function DashboardPage() {
       JSON.stringify({ mode: rangeMode, days: rangeDays, start: customStart, end: customEnd })
     );
   }, [rangeMode, rangeDays, customStart, customEnd]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("projectSelection", project);
+  }, [project]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedProject = window.localStorage.getItem("projectSelection");
+    if (savedProject) setProject(savedProject);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadProjects = async () => {
+      try {
+        const list = await fetchProjectOptions();
+        if (!active) return;
+        setProjectOptions(list);
+      } catch {
+        if (active) setProjectOptions([]);
+      }
+    };
+    loadProjects();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [trendVisible, setTrendVisible] = useState<Record<string, boolean>>({
     requests: true,
@@ -801,6 +831,7 @@ export default function DashboardPage() {
         if (filterModel) params.set("model", filterModel);
         if (filterRoute) params.set("route", filterRoute);
         if (filterName) params.set("name", filterName);
+        if (project !== "all") params.set("project", project);
         params.set("page", String(page));
         params.set("pageSize", "500");
 
@@ -857,7 +888,7 @@ export default function DashboardPage() {
       active = false;
       controller.abort();
     };
-  }, [rangeMode, customStart, customEnd, rangeDays, filterModel, filterRoute, filterName, page, refreshTrigger, ready]);
+  }, [rangeMode, customStart, customEnd, rangeDays, filterModel, filterRoute, filterName, page, refreshTrigger, ready, project]);
 
   const overviewData = overview;
   const showEmpty = overviewEmpty || !overview;
@@ -1173,6 +1204,21 @@ export default function DashboardPage() {
           <p className={`text-base ${darkMode ? "text-slate-400" : "text-slate-600"}`}>持久化的 CLIProxyAPI 使用统计与费用分析</p>
         </div>
         <div className="flex items-center gap-4">
+          <select
+            value={project}
+            onChange={(event) => setProject(event.target.value)}
+            className={`w-28 rounded-lg border px-2 py-1.5 text-sm transition ${
+              darkMode
+                ? "border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-500"
+                : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
+            }`}
+            title="选择项目"
+          >
+            <option value="all">全部项目</option>
+            {projectOptions.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
           <button
             onClick={() => applyTheme(!darkMode)}
             className={`rounded-lg border p-2 transition ${

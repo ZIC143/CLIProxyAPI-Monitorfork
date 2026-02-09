@@ -37,31 +37,31 @@
 ## 2026-04-15
 
 - 兼容 TypeScript 6.0.2 编译配置：
-  - 在 `tsconfig.json` 中新增 `ignoreDeprecations: "6.0"`，消除 TS6 对 `baseUrl` 的弃用阻断报错（TS5101）。
+  - 在 `tsconfig.json` 中新增 `ignoreDeprecations: “6.0”`，消除 TS6 对 `baseUrl` 的弃用阻断报错（TS5101）。
   - 确保依赖升级到 `typescript@6.0.2` 后，项目 `lint / type-check / build` 可继续通过。
 
 ## 2026-04-02
 
-- 修复 models.dev 价格同步中的“假更新”问题：
+- 修复 models.dev 价格同步中的”假更新”问题：
   - 价格同步路由新增价格归一逻辑，按数据库字段精度 `numeric(10,4)` 将输入/缓存/输出单价统一到 4 位小数后再做差异比较与写库。
   - 解决科学计数法（如 `7.5e-7`）及字符串格式差异（如 `1.23` vs `1.2300`）导致的重复误判更新。
   - 使同步结果中的 `updated/skipped` 更贴近真实价格变化，并减少无意义数据库写入。
-  - 执行“更新价格”后，若存在实际变更（`updated > 0`），前端会自动刷新一次面板并跳过概览缓存，确保费用统计立即按最新价格生效。
+  - 执行”更新价格”后，若存在实际变更（`updated > 0`），前端会自动刷新一次面板并跳过概览缓存，确保费用统计立即按最新价格生效。
 
 - 优化 models.dev 同名模型价格选择策略：
-  - 当同一 `model.id` 在多个 provider 中出现时，改为按“价格组合出现次数最高”选择价格信息。
-  - 若最高次数并列，采用“首次出现优先”规则，避免受后续覆盖写入顺序影响导致结果漂移。
+  - 当同一 `model.id` 在多个 provider 中出现时，改为按”价格组合出现次数最高”选择价格信息。
+  - 若最高次数并列，采用”首次出现优先”规则，避免受后续覆盖写入顺序影响导致结果漂移。
   - 次数统计基于数据库精度（4 位小数）归一后的价格签名，降低格式差异对选择结果的干扰。
 
 - 增强价格同步详情可观测性（P4）：
   - 在价格同步 `details` 中补充选价依据（命中数/总样本数、是否发生并列及裁决方式、首来源 provider、来源集合、价格签名）。
-  - `updated / skipped(未变化) / failed` 三种状态均保留选价依据，便于回溯“为什么选到这个价格”。
+  - `updated / skipped(未变化) / failed` 三种状态均保留选价依据，便于回溯”为什么选到这个价格”。
 
 - 优化价格同步详情文案可读性（人性化改造）：
-  - 列表中 `reason` 改为短句（如“已更新 / 未变化 / 写库失败 + 命中摘要”），减少信息噪声。
-  - 新增长说明字段用于悬停/展开查看完整选价上下文（并列裁决、来源集合、签名），实现“短信息默认可读，长信息按需查看”。
-  - 短句中的“并列”信息改为按需显示：仅在确实发生并列裁决时展示该片段，常规场景不再出现。
-  - 同步详情表新增末尾帮助列：用 `?` 按钮替代“悬停查看详情”文案，悬停按钮查看长说明，默认列表更简洁。
+  - 列表中 `reason` 改为短句（如”已更新 / 未变化 / 写库失败 + 命中摘要”），减少信息噪声。
+  - 新增长说明字段用于悬停/展开查看完整选价上下文（并列裁决、来源集合、签名），实现”短信息默认可读，长信息按需查看”。
+  - 短句中的”并列”信息改为按需显示：仅在确实发生并列裁决时展示该片段，常规场景不再出现。
+  - 同步详情表新增末尾帮助列：用 `?` 按钮替代”悬停查看详情”文案，悬停按钮查看长说明，默认列表更简洁。
 
 ## 2026-03-08
 
@@ -180,6 +180,28 @@
   - 为运行时 `pg.Pool` 增加可配置连接池参数：`DATABASE_POOL_MAX`、`DATABASE_POOL_IDLE_TIMEOUT_MS`、`DATABASE_POOL_CONNECTION_TIMEOUT_MS`、`DATABASE_POOL_MAX_USES`。
   - 默认将池大小收敛为 `5`，降低 Vercel 多实例并发下打满数据库连接槽的风险。
 
+
+## 2026-02-16
+
+- 修复 `/api/sync` 的凭证映射同步仅覆盖主项目问题：`auth_file_mappings` 改为遍历 `CLIPROXY_API_BASE_URLS` 全量项目（含项目二）拉取并合并写入，确保多项目凭证名称可见。
+- 新增 `auth-files` 多项目部分失败告警：当仅部分项目拉取失败时返回 `authFilesWarning` 但不中断 usage 同步，降低单项目故障对整体同步的影响。
+- 修复构建前迁移脚本的连接串读取时机：改为在运行阶段加载 `.env*` 后再初始化数据库连接，避免因顶层 `createPool()` 提前执行导致 `missing_connection_string` 报错。
+- 当未配置 `DATABASE_URL/POSTGRES_URL` 时，迁移脚本改为输出提示并跳过迁移（不阻塞构建），提升本地与 CI 场景下的构建容错性。
+- 修复多处 `usageRecords.project` 字段误用（`channels`、`overview`、`sync-model-prices`）：统一改为按 `usageRecords.route` 过滤项目，消除 TypeScript 构建报错并恢复项目筛选能力。
+- 修复 `lib/queries/records.ts` 缺失导入：补充 `estimateCost`、`priceMap` 引用，恢复记录页费用计算的编译通过状态。
+- 修复 `channels` 聚合字段误用：将不存在的 `usageRecords.channel` 更正为 `usageRecords.source`，恢复渠道统计接口编译与按渠道分组能力。
+- 修复 `/api/projects` 对失效配置项 `config.cliproxyProjects` 的依赖：改为从 `usage_records.route` 动态聚合项目列表，保证项目下拉与后端筛选口径一致并消除构建错误。
+- 修复 `explore` 页残留的项目筛选状态引用：移除未定义的 `setProject`/`setProjectOptions` 相关逻辑，恢复 TypeScript 构建通过。
+- 修复首页仪表盘缺失的项目筛选状态定义：补回 `project` 与 `projectOptions` 状态，消除 `project`/`setProjectOptions` 未定义编译错误并恢复价格同步请求参数。
+- 修复 `records` 页残留的项目筛选状态引用：移除未定义的 `setProject`/`setProjectOptions` 副作用与无用导入，恢复页面编译通过。
+- 修复 `overview` 查询参数类型与接口透传：补回 `project` 类型定义并在 `/api/overview` 中接收/透传该参数，同时将其纳入缓存键，避免类型报错与跨项目缓存串用。
+- 恢复多项目配置能力：`config.ts` 新增 `CLIPROXY_API_BASE_URLS/CLIPROXY_SECRET_KEYS` 逗号列表解析、稳定项目 ID 生成与主项目口径兼容单项目配置。
+- 恢复多项目数据隔离：`usage_records` 增加 `project` 字段并将唯一索引扩展为 `occurred_at + project + route + model + source`，同步补充 `0005_add_project_tracking` 迁移。
+- `/api/sync` 改为按项目逐一拉取并按 `project` 打标写入，且每次同步前回填历史空 `project` 为当前主项目，避免旧数据丢失项目维度。
+- 恢复 `overview/records/explore/channels` 的 `project` 过滤链路，并统一处理 `project=all` 为汇总语义。
+- 恢复前端多项目筛选：仪表盘/调用记录/探索/渠道页统一支持项目选择与本地持久化；`/api/projects` 改为从配置层输出稳定项目列表；`/api/management-url` 固定主项目。
+- 更新文档：补充多项目环境变量说明与 `.env.example` 示例。
+- 调整 `explore` 页项目选择器位置：从上方单独一行移动到“最近 7/14/30 天”按钮行并置于最左侧，减少视线跳转。
 
 ## 2026-02-15
 

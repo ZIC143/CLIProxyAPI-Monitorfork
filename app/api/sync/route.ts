@@ -4,7 +4,7 @@ import * as DrizzleOrm from "drizzle-orm";
 import { config, assertEnv } from "@/lib/config";
 import { db } from "@/lib/db/client";
 import { authFileMappings, usageRecords } from "@/lib/db/schema";
-import { toAuthFileMappings } from "@/lib/auth-files";
+import { toAuthFileMappings, type AuthFileMappingInsert } from "@/lib/auth-files";
 import { parseUsagePayload, toUsageRecords } from "@/lib/usage";
 
 const { eq, sql } = DrizzleOrm as any;
@@ -72,7 +72,7 @@ async function isAuthorized(request: Request) {
     const auth = request.headers.get("authorization") || "";
     if (allowed.includes(auth)) return true;
   }
-  
+
   // 检查用户的 dashboard cookie（用于前端调用）
   if (PASSWORD) {
     const cookieStore = await (nextHeaders as any).cookies();
@@ -82,28 +82,70 @@ async function isAuthorized(request: Request) {
       if (authCookie.value === expectedToken) return true;
     }
   }
-  
+
+  return false;
+}
+
+function shouldReplaceAuthMapping(existing: AuthFileMappingInsert | undefined, incoming: AuthFileMappingInsert) {
+  if (!existing) return true;
+  if (incoming.updatedAt && !existing.updatedAt) return true;
+  if (incoming.updatedAt && existing.updatedAt && incoming.updatedAt > existing.updatedAt) return true;
   return false;
 }
 
 async function syncAuthFileMappings(pulledAt: Date) {
-  const authFilesUrl = `${config.cliproxy.baseUrl.replace(/\/$/, "")}/auth-files`;
+  const mergedRows = new Map<string, AuthFileMappingInsert>();
+  let failedProjects = 0;
 
-  const response = await fetchWithTimeout(authFilesUrl, {
-    headers: {
-      Authorization: `Bearer ${config.cliproxy.apiKey}`,
-      "Content-Type": "application/json"
-    },
-    cache: "no-store"
-  }, AUTH_FILES_TIMEOUT_MS);
+  for (const project of config.cliproxyProjects) {
+    const authFilesUrl = `${project.baseUrl.replace(/\/$/, "")}/auth-files`;
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch auth-files: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetchWithTimeout(authFilesUrl, {
+        headers: {
+          Authorization: `Bearer ${project.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        cache: "no-store"
+      }, AUTH_FILES_TIMEOUT_MS);
+
+      if (!response.ok) {
+        failedProjects += 1;
+        console.warn("[sync] auth-files fetch non-2xx", { project: project.id, status: response.status });
+        continue;
+      }
+
+      const json = await response.json();
+      const rows = toAuthFileMappings(json, pulledAt);
+      for (const row of rows) {
+        const existing = mergedRows.get(row.authId);
+        if (shouldReplaceAuthMapping(existing, row)) {
+          mergedRows.set(row.authId, row);
+        }
+      }
+    } catch (error) {
+      failedProjects += 1;
+      const isTimeout = error instanceof Error && error.name === "AbortError";
+      console.warn("[sync] auth-files fetch failed", {
+        project: project.id,
+        reason: isTimeout ? "timeout" : "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
-  const json = await response.json();
-  const rows = toAuthFileMappings(json, pulledAt);
-  if (rows.length === 0) return 0;
+  const rows = Array.from(mergedRows.values());
+  if (rows.length === 0 && failedProjects > 0) {
+    throw new Error("Failed to fetch auth-files from all projects");
+  }
+
+  if (rows.length === 0) {
+    return {
+      synced: 0,
+      failedProjects,
+      attemptedProjects: config.cliproxyProjects.length
+    };
+  }
 
   for (const chunk of chunkArray(rows, AUTH_FILES_INSERT_CHUNK_SIZE)) {
     await db
@@ -123,7 +165,11 @@ async function syncAuthFileMappings(pulledAt: Date) {
       });
   }
 
-  return rows.length;
+  return {
+    synced: rows.length,
+    failedProjects,
+    attemptedProjects: config.cliproxyProjects.length
+  };
 }
 
 async function performSync(request: Request) {
@@ -136,65 +182,69 @@ async function performSync(request: Request) {
     return NextResponse.json({ error: (error as Error).message }, { status: 501 });
   }
 
-  const usageUrl = `${config.cliproxy.usageBaseUrl.replace(/\/$/, "")}/usage`;
   const pulledAt = new Date();
+  const allRows: ReturnType<typeof toUsageRecords> = [];
 
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(usageUrl, {
-      headers: {
-        Authorization: `Bearer ${config.cliproxy.apiKey}`,
-        "Content-Type": "application/json"
-      },
-      cache: "no-store"
-    }, USAGE_TIMEOUT_MS);
-  } catch (error) {
-    const isTimeout = error instanceof Error && error.name === "AbortError";
-    console.warn("[sync] usage fetch failed", {
-      reason: isTimeout ? "timeout" : "error",
-      isTimeout,
-      message: error instanceof Error ? error.message : String(error)
-    });
-    return NextResponse.json(
-      {
-        error: isTimeout ? "Upstream usage request timed out" : "Failed to fetch usage"
-      },
-      { status: isTimeout ? 504 : 502 }
-    );
+  for (const project of config.cliproxyProjects) {
+    const usageUrl = `${project.baseUrl.replace(/\/$/, "")}/usage`;
+    let response: Response;
+
+    try {
+      response = await fetchWithTimeout(usageUrl, {
+        headers: {
+          Authorization: `Bearer ${project.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        cache: "no-store"
+      }, USAGE_TIMEOUT_MS);
+    } catch (error) {
+      const isTimeout = error instanceof Error && error.name === "AbortError";
+      console.warn("[sync] usage fetch failed", {
+        project: project.id,
+        reason: isTimeout ? "timeout" : "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+      continue;
+    }
+
+    if (!response.ok) {
+      console.warn("[sync] usage fetch non-2xx", { project: project.id, status: response.status });
+      continue;
+    }
+
+    try {
+      const json = await response.json();
+      const payload = parseUsagePayload(json);
+      const rows = toUsageRecords(payload, pulledAt, project.id);
+      allRows.push(...rows);
+    } catch (parseError) {
+      console.warn("/api/sync parse upstream usage failed:", { project: project.id, parseError });
+    }
   }
-
-  if (!response.ok) {
-    return NextResponse.json(
-      { error: "Failed to fetch usage", statusText: response.statusText },
-      { status: response.status }
-    );
-  }
-
-  let payload;
-  try {
-    const json = await response.json();
-    payload = parseUsagePayload(json);
-  } catch (parseError) {
-    console.error("/api/sync parse upstream usage failed:", parseError);
-    return NextResponse.json(
-      { error: "Bad Gateway" },
-      { status: 502 }
-    );
-  }
-
-  const rows = toUsageRecords(payload, pulledAt);
 
   let authFilesSynced = 0;
   let authFilesWarning: string | undefined;
   try {
-    authFilesSynced = await syncAuthFileMappings(pulledAt);
+    const authFilesResult = await syncAuthFileMappings(pulledAt);
+    authFilesSynced = authFilesResult.synced;
+    if (authFilesResult.failedProjects > 0) {
+      authFilesWarning = `auth-files partial sync failed (${authFilesResult.failedProjects}/${authFilesResult.attemptedProjects})`;
+    }
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === "AbortError";
     authFilesWarning = isTimeout ? "auth-files sync timed out" : "auth-files sync failed";
     console.warn("/api/sync auth-files sync failed:", error);
   }
 
-  if (rows.length === 0) {
+  const primaryProjectId = config.primaryProject?.id || "";
+  if (primaryProjectId) {
+    await db
+      .update(usageRecords)
+      .set({ project: primaryProjectId })
+      .where(sql`${usageRecords.project} = '' OR ${usageRecords.project} IS NULL`);
+  }
+
+  if (allRows.length === 0) {
     return NextResponse.json({
       status: "ok",
       inserted: 0,
@@ -206,11 +256,11 @@ async function performSync(request: Request) {
 
   let inserted = 0;
   try {
-    for (const chunk of chunkArray(rows, USAGE_INSERT_CHUNK_SIZE)) {
+    for (const chunk of chunkArray(allRows, USAGE_INSERT_CHUNK_SIZE)) {
       const insertedRows = await db
         .insert(usageRecords)
         .values(chunk)
-        .onConflictDoNothing({ target: [usageRecords.occurredAt, usageRecords.route, usageRecords.model, usageRecords.source] })
+        .onConflictDoNothing({ target: [usageRecords.occurredAt, usageRecords.project, usageRecords.route, usageRecords.model, usageRecords.source] })
         .returning({ id: usageRecords.id });
       inserted += insertedRows.length;
     }
@@ -224,7 +274,7 @@ async function performSync(request: Request) {
 
   // Vercel Postgres may return an empty array even when rows are inserted with RETURNING + ON CONFLICT DO NOTHING.
   // Fall back to counting rows synced in this run (identified by the shared pulledAt timestamp) to avoid reporting 0.
-  if (inserted === 0 && rows.length > 0) {
+  if (inserted === 0 && allRows.length > 0) {
     const fallback = await db
       .select({ count: sql<number>`count(*)` })
       .from(usageRecords)
@@ -235,7 +285,7 @@ async function performSync(request: Request) {
   return NextResponse.json({
     status: "ok",
     inserted,
-    attempted: rows.length,
+    attempted: allRows.length,
     authFilesSynced,
     ...(authFilesWarning ? { authFilesWarning } : {})
   });

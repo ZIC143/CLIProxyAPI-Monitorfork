@@ -36,6 +36,20 @@
       "when": 1771072800000,
       "tag": "0004_add_auth_file_mappings",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1760000000000,
+      "tag": "0004_add_usage_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771286400000,
+      "tag": "0005_add_project_tracking",
+      "breakpoints": true
     }
   ]
 }

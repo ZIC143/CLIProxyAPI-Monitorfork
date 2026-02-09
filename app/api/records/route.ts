@@ -30,6 +30,7 @@ export async function GET(request: Request) {
     const sortField = !sortKeys && legacySortField && VALID_SORT_FIELDS.has(legacySortField) ? legacySortField as SortKey["field"] : undefined;
     const sortOrder = !sortKeys && (legacySortOrder === "asc" || legacySortOrder === "desc") ? legacySortOrder : undefined;
     const cursor = searchParams.get("cursor");
+    const project = searchParams.get("project");
     const model = searchParams.get("model");
     const route = searchParams.get("route");
     const source = searchParams.get("source");
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
       sortField,
       sortOrder,
       cursor,
+      project: project || undefined,
       model: model || undefined,
       route: route || undefined,
       source: source || undefined,

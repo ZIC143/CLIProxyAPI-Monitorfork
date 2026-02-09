@@ -20,14 +20,16 @@ type CachedOverview = {
 const OVERVIEW_CACHE_TTL_MS = 30_000;
 const OVERVIEW_CACHE_MAX_ENTRIES = 100;
 const overviewCache = new Map<string, CachedOverview>();
+let lastOverviewPayload: CachedOverview["value"] | null = null;
 
-function makeCacheKey(input: { days?: number; model?: string | null; route?: string | null; source?: string | null; name?: string | null; page?: number; pageSize?: number; start?: string | null; end?: string | null }) {
+function makeCacheKey(input: { days?: number; model?: string | null; route?: string | null; source?: string | null; name?: string | null; project?: string | null; page?: number; pageSize?: number; start?: string | null; end?: string | null }) {
   return JSON.stringify({
     days: input.days ?? null,
     model: input.model ?? null,
     route: input.route ?? null,
     source: input.source ?? null,
     name: input.name ?? null,
+    project: input.project ?? null,
     page: input.page ?? null,
     pageSize: input.pageSize ?? null,
     start: input.start ?? null,
@@ -68,6 +70,7 @@ export async function GET(request: Request) {
     const route = searchParams.get("route");
     const source = searchParams.get("source");
     const name = searchParams.get("name");
+    const project = searchParams.get("project");
     const pageParam = searchParams.get("page");
     const pageSizeParam = searchParams.get("pageSize");
     const start = searchParams.get("start");
@@ -77,7 +80,7 @@ export async function GET(request: Request) {
     const pageSize = pageSizeParam ? Number.parseInt(pageSizeParam, 10) : undefined;
     const skipCacheParam = searchParams.get("skipCache");
     const skipCache = skipCacheParam === "1" || skipCacheParam === "true";
-    const cacheKey = makeCacheKey({ days, model, route, source, name, page, pageSize, start, end });
+    const cacheKey = makeCacheKey({ days, model, route, source, name, page, pageSize, start, end, project });
     if (!skipCache) {
       const cached = getCached(cacheKey);
       if (cached) {
@@ -86,6 +89,7 @@ export async function GET(request: Request) {
     }
 
     const { overview, empty, days: appliedDays, meta, filters, timezone, lastSyncAt } = await getOverview(days, {
+      project: project || undefined,
       model: model || undefined,
       route: route || undefined,
       source: source || undefined,
@@ -99,9 +103,13 @@ export async function GET(request: Request) {
 
     const payload = { overview, empty, days: appliedDays, meta, filters, timezone, lastSyncAt };
     setCached(cacheKey, payload);
+    lastOverviewPayload = payload;
     return NextResponse.json(payload, { status: 200 });
   } catch (error) {
     console.error("/api/overview failed:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    if (lastOverviewPayload) {
+      return NextResponse.json({ ...lastOverviewPayload, stale: true, degraded: true }, { status: 200 });
+    }
+    return NextResponse.json({ overview: null, empty: true, days: 0, meta: { page: 1, pageSize: 10, totalModels: 0, totalPages: 1 }, filters: { models: [], routes: [], channels: [] }, stale: true, degraded: true }, { status: 200 });
   }
 }

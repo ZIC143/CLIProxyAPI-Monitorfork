@@ -2,6 +2,7 @@ import * as DrizzleOrm from "drizzle-orm";
 const { and, asc, desc, eq, gte, lte, sql } = DrizzleOrm as any;
 import { db } from "@/lib/db/client";
 import { authFileMappings, modelPrices, usageRecords } from "@/lib/db/schema";
+import { estimateCost, priceMap } from "@/lib/usage";
 
 export type UsageRecordRow = {
   id: number;
@@ -143,6 +144,7 @@ export async function getUsageRecords(input: {
   sortField?: SortField;
   sortOrder?: SortOrder;
   cursor?: string | null;
+  project?: string | null;
   model?: string | null;
   route?: string | null;
   source?: string | null;
@@ -182,6 +184,10 @@ export async function getUsageRecords(input: {
     }
   }
 
+  if (input.project && input.project !== "all") {
+    whereParts.push(eq(usageRecords.project, input.project));
+  }
+
   if (input.model) {
     whereParts.push(eq(usageRecords.model, input.model));
   }
@@ -195,11 +201,15 @@ export async function getUsageRecords(input: {
   }
 
   const primarySortExpr = getSortExpr(primaryField) as any;
+  const baseWhere = whereParts.length ? and(...whereParts) : undefined;
 
+  const baseWhere = whereParts.length ? and(...whereParts) : undefined;
   const cursorWhere = buildCursorWhere(primaryKey, cursor, primarySortExpr);
   if (cursorWhere) whereParts.push(cursorWhere);
-
   const where = whereParts.length ? and(...whereParts) : undefined;
+
+  const shouldComputeCostInSql = primaryField === "cost";
+  const selectedCostExpr = shouldComputeCostInSql ? COST_EXPR : sql<number>`0`;
 
   const query = db
     .select({
@@ -216,7 +226,7 @@ export async function getUsageRecords(input: {
       reasoningTokens: usageRecords.reasoningTokens,
       cachedTokens: usageRecords.cachedTokens,
       isError: usageRecords.isError,
-      cost: COST_EXPR
+      cost: selectedCostExpr
     })
     .from(usageRecords)
     .leftJoin(authFileMappings, eq(usageRecords.authIndex, authFileMappings.authId))
@@ -234,6 +244,19 @@ export async function getUsageRecords(input: {
 
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
+
+  let priceLookup: ReturnType<typeof priceMap> | null = null;
+  if (!shouldComputeCostInSql) {
+    const priceRows = await db.select().from(modelPrices);
+    priceLookup = priceMap(
+      priceRows.map((p) => ({
+        model: p.model,
+        inputPricePer1M: Number(p.inputPricePer1M),
+        cachedInputPricePer1M: Number(p.cachedInputPricePer1M),
+        outputPricePer1M: Number(p.outputPricePer1M)
+      }))
+    );
+  }
 
   const nextCursor = (() => {
     if (!hasMore) return null;
@@ -280,14 +303,14 @@ export async function getUsageRecords(input: {
       db
         .select({ model: usageRecords.model })
         .from(usageRecords)
-        .where(where)
+        .where(baseWhere)
         .groupBy(usageRecords.model)
         .orderBy(usageRecords.model)
         .limit(200),
       db
         .select({ route: usageRecords.route })
         .from(usageRecords)
-        .where(where)
+        .where(baseWhere)
         .groupBy(usageRecords.route)
         .orderBy(usageRecords.route)
         .limit(200),
@@ -310,7 +333,18 @@ export async function getUsageRecords(input: {
   return {
     items: items.map((row) => ({
       ...row,
-      cost: Number(row.cost ?? 0)
+      cost: shouldComputeCostInSql
+        ? Number(row.cost ?? 0)
+        : estimateCost(
+            {
+              inputTokens: row.inputTokens,
+              cachedTokens: row.cachedTokens,
+              outputTokens: row.outputTokens,
+              reasoningTokens: row.reasoningTokens
+            },
+            row.model,
+            priceLookup ?? { exact: {}, patterns: [] }
+          )
     })),
     nextCursor,
     filters

@@ -1,14 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-
-const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL || "";
-
-// 驱动选择策略（与 lib/db/client.ts 保持一致）
-const useNeon =
-  process.env.DATABASE_DRIVER === "neon" ||
-  (process.env.DATABASE_DRIVER !== "pg" &&
-    /\.neon\.tech/.test(connectionString));
+import { existsSync, readFileSync } from "node:fs";
 
 const PG_SSL_QUERY_KEYS = [
   "ssl",
@@ -59,7 +51,71 @@ function getSSLOptions() {
   return { ca: pem, rejectUnauthorized: true };
 }
 
-async function createMigrateContext() {
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) {
+    return;
+  }
+
+  const content = readFileSync(filePath, "utf8");
+  const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const normalized = trimmed.startsWith("export ")
+      ? trimmed.slice(7).trim()
+      : trimmed;
+    const separatorIndex = normalized.indexOf("=");
+
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = normalized.slice(0, separatorIndex).trim();
+    let value = normalized.slice(separatorIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+function loadLocalEnv() {
+  const env = process.env.NODE_ENV || "development";
+  const envFiles = [
+    `.env.${env}.local`,
+    env !== "test" ? ".env.local" : null,
+    `.env.${env}`,
+    ".env"
+  ].filter(Boolean);
+
+  for (const file of envFiles) {
+    loadEnvFile(file);
+  }
+}
+
+function getConnectionString() {
+  return process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL || "";
+}
+
+function shouldUseNeon(connectionString) {
+  return process.env.DATABASE_DRIVER === "neon" ||
+    (process.env.DATABASE_DRIVER !== "pg" && /\.neon\.tech/.test(connectionString));
+}
+
+async function createMigrateContext(connectionString) {
+  const useNeon = shouldUseNeon(connectionString);
   if (useNeon) {
     const { Pool, neonConfig } = await import("@neondatabase/serverless");
     const { WebSocket } = await import("ws");
@@ -68,7 +124,7 @@ async function createMigrateContext() {
     const { migrate } = await import("drizzle-orm/neon-serverless/migrator");
     const pool = new Pool({ connectionString });
     const db = drizzle(pool);
-    return { pool, db, migrate };
+    return { pool, db, migrate, useNeon };
   } else {
     const pg = await import("pg");
     const { drizzle } = await import("drizzle-orm/node-postgres");
@@ -82,7 +138,7 @@ async function createMigrateContext() {
       ssl: sslOptions
     });
     const db = drizzle(pool);
-    return { pool, db, migrate };
+    return { pool, db, migrate, useNeon };
   }
 }
 
@@ -103,7 +159,15 @@ function getMigrationMeta(migrationsFolder) {
 }
 
 async function runMigrations() {
-  const { pool, db, migrate } = await createMigrateContext();
+  loadLocalEnv();
+
+  const connectionString = getConnectionString();
+  if (!connectionString) {
+    console.warn("未检测到 DATABASE_URL 或 POSTGRES_URL，跳过数据库迁移。");
+    process.exit(0);
+  }
+
+  const { pool, db, migrate, useNeon } = await createMigrateContext(connectionString);
   try {
     console.log(`检查迁移表... (驱动: ${useNeon ? "neon-serverless" : "pg"})`);
     
@@ -144,13 +208,12 @@ async function runMigrations() {
     console.log("执行数据库迁移...");
     await migrate(db, { migrationsFolder: "./drizzle" });
     console.log("✓ 迁移完成");
-    
-    await pool.end();
-    process.exit(0);
   } catch (error) {
     console.error("迁移失败:", error);
     try { await pool.end(); } catch {}
     // 不阻止构建继续
+  } finally {
+    await pool.end().catch(() => undefined);
     process.exit(0);
   }
 }
