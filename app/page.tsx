@@ -623,10 +623,17 @@ export default function DashboardPage() {
     setPricesSyncModalOpen(true);
 
     try {
+      const usedModels = Array.from(
+        new Set([
+          ...modelOptions,
+          ...(overview?.models?.map((m) => m.model) ?? [])
+        ].map((m) => m.trim()).filter(Boolean))
+      );
+
       const res = await fetch("/api/sync-model-prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({})
+        body: JSON.stringify({ project, usedModels })
       });
 
       const data = await res.json();
@@ -663,7 +670,7 @@ export default function DashboardPage() {
     } finally {
       setSyncingPrices(false);
     }
-  }, [syncingPrices, loadPrices]);
+  }, [syncingPrices, loadPrices, modelOptions, overview?.models, project]);
 
   // 页面加载时仅在当前会话首次进入时自动同步一次
   useEffect(() => {

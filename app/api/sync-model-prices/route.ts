@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import * as nextHeaders from "next/headers";
-import * as DrizzleOrm from "drizzle-orm";
+import { cookies } from "next/headers";
+import { inArray, desc, eq, and, gte } from "drizzle-orm";
 import { config } from "@/lib/config";
 import { db } from "@/lib/db/client";
 import { modelPrices, usageRecords } from "@/lib/db/schema";
@@ -38,7 +38,7 @@ async function isAuthorized(request: Request) {
     const auth = request.headers.get("authorization") || "";
     if (allowed.includes(auth)) return true;
   }
-  
+
   // 检查用户的 dashboard cookie（用于前端调用）
   if (PASSWORD) {
     const cookieStore = await (nextHeaders as any).cookies();
@@ -48,7 +48,7 @@ async function isAuthorized(request: Request) {
       if (authCookie.value === expectedToken) return true;
     }
   }
-  
+
   return false;
 }
 
@@ -59,7 +59,7 @@ async function hashString(value: string) {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// 统一价格精度到数据库列精度（numeric(10,4)），避免科学计数法/格式差异导致“假更新”
+// 统一价格精度到数据库列精度（numeric(10,4)），避免科学计数法/格式差异导致"假更新"
 function normalizePriceForDb(value: unknown): string {
   const num = typeof value === "number" ? value : Number(value ?? 0);
   if (!Number.isFinite(num)) return "0.0000";
@@ -95,6 +95,25 @@ type PriceSelectionMeta = {
   signature: string;
 };
 
+type UsedModelRow = { model: string };
+
+async function getUsedModels(project?: string, days = 90): Promise<string[]> {
+  const since = new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000);
+  const whereParts = [gte(usageRecords.occurredAt, since)];
+  if (project && project !== "all") {
+    whereParts.push(eq(usageRecords.project, project));
+  }
+
+  const rows: UsedModelRow[] = await db
+    .select({ model: usageRecords.model })
+    .from(usageRecords)
+    .where(and(...whereParts))
+    .groupBy(usageRecords.model)
+    .orderBy(usageRecords.model);
+
+  return rows.map((r) => r.model).filter(Boolean);
+}
+
 export async function POST(request: Request) {
   try {
     // 🔒 鉴权检查
@@ -118,17 +137,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "服务端未配置 DATABASE_URL" }, { status: 500 });
     }
 
+    const reqBody = await request
+      .json()
+      .catch(() => ({} as { project?: string | null; usedModels?: string[] }));
+    const project = reqBody?.project ?? null;
+    const inputUsedModels = Array.isArray(reqBody?.usedModels)
+      ? Array.from(new Set(reqBody.usedModels.map((m) => String(m || "").trim()).filter(Boolean)))
+      : [];
+
     // 从数据库获取最新的 route 值作为 API Key
     const latestRecord = await db
       .select({ route: usageRecords.route })
       .from(usageRecords)
       .orderBy(desc(usageRecords.id))
       .limit(1);
-    
+
     if (!latestRecord.length || !latestRecord[0].route) {
       return NextResponse.json({ error: "数据库中没有可用的 API Key 记录" }, { status: 500 });
     }
-    
+
     const apiKey = latestRecord[0].route;
 
     // 1. 从 models.dev 获取价格数据
@@ -166,7 +193,7 @@ export async function POST(request: Request) {
       modelsDevCache = modelsDevData;
     }
 
-    // 2. 构建模型ID到价格的映射（同名用“众数”策略；并列众数取首次出现）
+    // 2. 构建模型ID到价格的映射（同名用"众数"策略；并列众数取首次出现）
     const priceModeBuckets = new Map<string, Map<string, PriceModeCandidate>>();
     let seenOrder = 0;
 
@@ -181,7 +208,7 @@ export async function POST(request: Request) {
             cached: model.cost.cache_read ?? 0
           };
 
-          // 以数据库精度归一后作为“价格组合”签名，避免格式差异影响众数统计
+          // 以数据库精度归一后作为"价格组合"签名，避免格式差异影响众数统计
           const signature = [
             normalizePriceForDb(priceInfo.input),
             normalizePriceForDb(priceInfo.cached),
@@ -271,21 +298,9 @@ export async function POST(request: Request) {
       return `命中计数=${meta.modeCount}/${meta.totalCount}；并列候选=${meta.tieCount}${meta.tieBreakApplied ? "（按首次出现裁决）" : ""}；首来源=${meta.firstSeenProvider}；来源集=${providers}；签名=${meta.signature}`;
     };
 
-    // 3. 从 CLIProxyAPI 获取当前模型列表
-    // 使用 OpenAI 兼容的 /v1/models 端点而非管理 API
-    const baseUrlWithoutManagement = config.cliproxy.baseUrl.replace(/\/v0\/management\/?$/, "");
-    const modelsUrl = `${baseUrlWithoutManagement}/v1/models`;
-    const cliproxyRes = await fetch(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}`, "Accept": "application/json" },
-      cache: "no-store"
-    });
-
-    if (!cliproxyRes.ok) {
-      return NextResponse.json({ error: `无法获取模型列表: ${cliproxyRes.status}` }, { status: 502 });
-    }
-
-    const cliproxyData = await cliproxyRes.json();
-    const models: { id: string }[] = cliproxyData.data || [];
+    // 3. 获取已使用模型列表（来源：usageRecords 聚合）
+    const usedModels = inputUsedModels.length > 0 ? inputUsedModels : await getUsedModels(project ?? undefined, 90);
+    const models: { id: string }[] = usedModels.map((id) => ({ id }));
 
     // 4. 匹配并收集要更新的价格
     let skippedCount = 0;
@@ -310,7 +325,7 @@ export async function POST(request: Request) {
         if (lastDashIndex > 0) {
           const baseNameWithoutSuffix = modelId.substring(0, lastDashIndex);
           let bestMatch: { key: string; value: PriceInfo; matchLength: number } | null = null;
-          
+
           for (const [key, value] of priceMap.entries()) {
             if (key.startsWith(baseNameWithoutSuffix) || baseNameWithoutSuffix.startsWith(key)) {
               const matchLength = Math.min(key.length, baseNameWithoutSuffix.length);
@@ -319,7 +334,7 @@ export async function POST(request: Request) {
               }
             }
           }
-          
+
           if (bestMatch) {
             priceInfo = bestMatch.value;
             matchedKey = bestMatch.key;
@@ -338,7 +353,7 @@ export async function POST(request: Request) {
       if (!priceInfo) {
         const baseModelName = modelId.replace(/-\d{4,}.*$/, "").replace(/@.*$/, "");
         let bestMatch: { key: string; value: PriceInfo; matchLength: number } | null = null;
-        
+
         for (const [key, value] of priceMap.entries()) {
           if (key.includes(baseModelName)) {
             const matchLength = baseModelName.length;
@@ -352,7 +367,7 @@ export async function POST(request: Request) {
             }
           }
         }
-        
+
         if (bestMatch) {
           priceInfo = bestMatch.value;
           matchedKey = bestMatch.key;
@@ -361,7 +376,8 @@ export async function POST(request: Request) {
 
       if (!priceInfo) {
         skippedCount++;
-        details.push({ model: modelId, status: "skipped", reason: "未找到价格信息" });
+        failedCount++;
+        details.push({ model: modelId, status: "failed", reason: "未找到价格信息（已使用模型）" });
         continue;
       }
 
@@ -371,7 +387,7 @@ export async function POST(request: Request) {
       details.push({ model: modelId, status: "pending", matchedWith: matchedKey, selectionSummary, selectionDebug });
     }
 
-    // 5. 差异化更新（仅更新变化的价格）
+    // 5. 查询已保存价格（已保存不覆盖）
     const modelIds = priceUpdates.map((u) => u.model);
     const existingRows: Array<{
       model: string;
@@ -401,7 +417,7 @@ export async function POST(request: Request) {
       ])
     );
 
-    // 6. 批量更新数据库（仅更新变化项）
+    // 6. 批量写入数据库（仅新增，已保存的不覆盖）
     let updatedCount = 0;
     for (const { model: modelId, priceInfo } of priceUpdates) {
       const nextInput = normalizePriceForDb(priceInfo.input);
@@ -409,7 +425,7 @@ export async function POST(request: Request) {
       const nextOutput = normalizePriceForDb(priceInfo.output);
       const existing = existingMap.get(modelId);
 
-      if (existing && existing.input === nextInput && existing.cached === nextCached && existing.output === nextOutput) {
+      if (existing) {
         skippedCount++;
         const detailIndex = details.findIndex((d) => d.model === modelId);
         if (detailIndex !== -1) {
@@ -433,13 +449,6 @@ export async function POST(request: Request) {
           inputPricePer1M: nextInput,
           cachedInputPricePer1M: nextCached,
           outputPricePer1M: nextOutput
-        }).onConflictDoUpdate({
-          target: modelPrices.model,
-          set: {
-            inputPricePer1M: nextInput,
-            cachedInputPricePer1M: nextCached,
-            outputPricePer1M: nextOutput
-          }
         });
         updatedCount++;
         const detailIndex = details.findIndex((d) => d.model === modelId);
