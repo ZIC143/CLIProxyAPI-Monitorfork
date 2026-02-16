@@ -1149,7 +1149,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <main className={`min-h-screen px-6 py-8 transition-colors ${darkMode ? "bg-slate-900 text-slate-100" : "bg-slate-50 text-slate-900"}`}>
+    <main className={`min-h-screen px-3 sm:px-6 py-6 sm:py-8 transition-colors ${darkMode ? "bg-slate-900 text-slate-100" : "bg-slate-50 text-slate-900"}`}>
       {overviewError ? (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -1657,13 +1657,13 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <section className="mt-8 grid gap-6 lg:grid-cols-5">
+      <section className="mt-8 grid gap-6 grid-cols-1 lg:grid-cols-5">
         {loadingOverview || !overviewData ? (
           <div className="lg:col-span-3">
             <Skeleton className="h-[400px] rounded-2xl" />
           </div>
         ) : (
-          <div className={`animate-card-float rounded-2xl p-6 shadow-sm ring-1 lg:col-span-3 flex flex-col ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.15s' }}>
+          <div className={`animate-card-float rounded-2xl p-4 sm:p-6 shadow-sm ring-1 lg:col-span-3 flex flex-col ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.15s' }}>
             <div className="flex items-center justify-between">
               <h2 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>每日用量趋势</h2>
               <div className="flex items-center gap-2">
@@ -1790,8 +1790,8 @@ export default function DashboardPage() {
             <Skeleton className="h-[400px] rounded-2xl" />
           </div>
         ) : (
-          <div className={`animate-card-float rounded-2xl p-6 shadow-sm ring-1 lg:col-span-2 flex flex-col ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.2s' }}>
-            <div className="flex items-center justify-between">
+          <div className={`animate-card-float rounded-2xl p-4 sm:p-6 shadow-sm ring-1 lg:col-span-2 flex flex-col ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.2s' }}>
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>模型用量分布</h2>
               <div className="flex items-center gap-2">
                 <div className={`flex items-center gap-1 rounded-lg border p-0.5 ${darkMode ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-slate-100"}`}>
@@ -1818,7 +1818,7 @@ export default function DashboardPage() {
                 </button>
               </div>
             </div>
-            <div className="mt-4 flex gap-4 h-[300px]">
+            <div className="mt-4 flex flex-col sm:flex-row gap-4 min-h-[300px] sm:h-[300px]">
               {showEmpty || overviewData.models.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-800/30 text-center">
                   <p className="text-base text-slate-400">暂无模型数据</p>
@@ -1828,7 +1828,7 @@ export default function DashboardPage() {
                 {/* 饼图 */}
                 <div
                   ref={pieChartContainerRef}
-                  className="shrink-0 w-64"
+                  className="shrink-0 w-full sm:w-48 md:w-56 lg:w-48 xl:w-56 h-[200px] sm:h-full"
                   onPointerLeave={() => {
                     cancelPieLegendClear();
                     setPieTooltipOpen(false);
@@ -1899,7 +1899,7 @@ export default function DashboardPage() {
                   </ResponsiveContainer>
                 </div>
                 {/* 自定义图例 */}
-                <div className="flex-1 overflow-y-auto pr-2 space-y-1 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto pr-2 space-y-1 custom-scrollbar max-h-64 sm:max-h-full">
                   {[...overviewData.models]
                     .sort((a, b) => b[pieMode] - a[pieMode])
                     .map((item, sortedIndex) => {
@@ -1956,14 +1956,14 @@ export default function DashboardPage() {
       </section>
 
       {/* 第二行：每小时负载 + 模型费用 */}
-      <section className="mt-6 grid gap-6 lg:grid-cols-5">
+      <section className="mt-6 grid gap-6 grid-cols-1 lg:grid-cols-5">
         {/* 每小时负载分布 */}
         {loadingOverview || !overviewData ? (
           <div className="lg:col-span-3">
             <Skeleton className="h-[400px] rounded-2xl" />
           </div>
         ) : (
-          <div className={`animate-card-float rounded-2xl p-6 shadow-sm ring-1 lg:col-span-3 flex flex-col ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.25s' }}>
+          <div className={`animate-card-float rounded-2xl p-4 sm:p-6 shadow-sm ring-1 lg:col-span-3 flex flex-col ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.25s' }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h2 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>每小时负载分布</h2>
@@ -2180,21 +2180,21 @@ export default function DashboardPage() {
           <Skeleton className="h-[500px] rounded-2xl" />
         </div>
       ) : (
-        <section className={`animate-card-float mt-8 rounded-2xl p-6 shadow-sm ring-1 ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.35s' }}>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
+        <section className={`animate-card-float mt-8 rounded-2xl p-4 sm:p-6 shadow-sm ring-1 ${darkMode ? "bg-slate-800/50 ring-slate-700" : "bg-white ring-slate-200"}`} style={{ animationDelay: '0.35s' }}>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
               <h2 className={`text-lg font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>模型价格配置</h2>
               <p className={`text-xs ${darkMode ? "text-slate-400" : "text-slate-500"}`}>设置每百万 tokens 单价，费用计算将立即更新</p>
             </div>
-            <div className="flex w-full flex-col gap-4 md:w-3/5 md:flex-row md:items-center md:justify-end">
-              <div className="relative w-full md:max-w-[360px]">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center md:w-auto md:justify-end">
+              <div className="relative flex-1 sm:max-w-[280px] md:max-w-[320px]">
                 <Search className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${darkMode ? "text-slate-500" : "text-slate-400"}`} />
                 <input
                   type="text"
                   placeholder="搜索已配置价格的模型..."
                   value={priceSearchQuery}
                   onChange={(e) => setPriceSearchQuery(e.target.value)}
-                  className={`w-full rounded-lg border py-2 pl-10 pr-3 text-sm focus:border-indigo-500 focus:outline-none ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder-slate-500" : "border-slate-300 bg-white text-slate-900 placeholder-slate-400"}`}
+                  className={`w-full rounded-lg border py-2 pl-9 pr-8 text-sm focus:border-indigo-500 focus:outline-none ${darkMode ? "border-slate-700 bg-slate-900 text-white placeholder-slate-500" : "border-slate-300 bg-white text-slate-900 placeholder-slate-400"}`}
                   aria-label="搜索模型价格"
                 />
                 {priceSearchQuery && (
@@ -2210,7 +2210,7 @@ export default function DashboardPage() {
               <button
                 onClick={syncModelPrices}
                 disabled={syncingPrices}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition whitespace-nowrap shrink-0 ${
                   syncingPrices
                     ? darkMode
                       ? "cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500"
@@ -2225,9 +2225,9 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-5">
-          <form onSubmit={handleSubmit} className={`rounded-xl border p-5 lg:col-span-2 ${darkMode ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-            <div className="grid gap-6">
+          <div className="mt-6 grid gap-6 grid-cols-1 lg:grid-cols-5">
+          <form onSubmit={handleSubmit} className={`rounded-xl border p-4 sm:p-5 lg:col-span-2 ${darkMode ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
+            <div className="grid gap-4 sm:gap-6">
               <label className={`text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
                 模型名称
                 <ComboBox
@@ -2283,44 +2283,44 @@ export default function DashboardPage() {
             </div>
           </form>
 
-          <div className="lg:col-span-3">
-            <div className="scrollbar-slim grid max-h-[420px] gap-3 overflow-y-auto pr-1">
+          <div className="lg:col-span-3 min-w-0">
+            <div className="scrollbar-slim grid max-h-[420px] gap-3 overflow-y-auto overflow-x-hidden pr-1">
               {filteredPrices.length ? filteredPrices.map((price) => (
-                <div key={price.model} className={`flex items-center justify-between rounded-xl border px-4 pt-3 pb-2.5 ${darkMode ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
-                  <div>
-                    <p className={`text-base font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>{price.model}</p>
-                    <div className="mt-1.5 grid grid-cols-3 gap-2 text-sm leading-5">
-                      <span className={`inline-flex items-center justify-between rounded-full px-2 py-0 ${darkMode ? "bg-rose-500/15 text-rose-200" : "bg-rose-100 text-rose-700"}`} style={{ width: `${badgeWidths.input}px` }}>
-                        <span className="font-medium">输入</span>
-                        <span className="font-semibold tabular-nums">${price.inputPricePer1M}/M</span>
-                      </span>
-                      <span className={`inline-flex items-center justify-between rounded-full px-2 py-0 ${darkMode ? "bg-amber-500/15 text-amber-200" : "bg-amber-100 text-amber-700"}`} style={{ width: `${badgeWidths.cached}px` }}>
-                        <span className="font-medium">缓存</span>
-                        <span className="font-semibold tabular-nums">${price.cachedInputPricePer1M}/M</span>
-                      </span>
-                      <span className={`inline-flex items-center justify-between rounded-full px-2 py-0 ${darkMode ? "bg-emerald-500/15 text-emerald-200" : "bg-emerald-100 text-emerald-700"}`} style={{ width: `${badgeWidths.output}px` }}>
-                        <span className="font-medium">输出</span>
-                        <span className="font-semibold tabular-nums">${price.outputPricePer1M}/M</span>
-                      </span>
+                <div key={price.model} className={`flex flex-col gap-2 rounded-xl border px-3 py-2.5 sm:px-4 sm:py-3 ${darkMode ? "border-slate-700 bg-slate-800/50" : "border-slate-200 bg-slate-50"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className={`text-sm sm:text-base font-semibold break-all line-clamp-2 ${darkMode ? "text-white" : "text-slate-900"}`}>{price.model}</p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(price)}
+                        className={`rounded-lg p-1.5 transition ${darkMode ? "text-slate-400 hover:bg-slate-700 hover:text-white" : "text-slate-500 hover:bg-slate-200 hover:text-slate-900"}`}
+                        title="编辑"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(price.model)}
+                        className={`rounded-lg p-1.5 transition ${darkMode ? "text-red-400 hover:bg-red-900/50 hover:text-red-300" : "text-red-500 hover:bg-red-100 hover:text-red-700"}`}
+                        title="删除"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openEditModal(price)}
-                      className={`rounded-lg p-2 transition ${darkMode ? "text-slate-400 hover:bg-slate-700 hover:text-white" : "text-slate-500 hover:bg-slate-200 hover:text-slate-900"}`}
-                      title="编辑"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPendingDelete(price.model)}
-                      className={`rounded-lg p-2 transition ${darkMode ? "text-red-400 hover:bg-red-900/50 hover:text-red-300" : "text-red-500 hover:bg-red-100 hover:text-red-700"}`}
-                      title="删除"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${darkMode ? "bg-rose-500/15 text-rose-200" : "bg-rose-100 text-rose-700"}`}>
+                      <span>输入</span>
+                      <span className="font-semibold tabular-nums">${price.inputPricePer1M}/M</span>
+                    </span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${darkMode ? "bg-amber-500/15 text-amber-200" : "bg-amber-100 text-amber-700"}`}>
+                      <span>缓存</span>
+                      <span className="font-semibold tabular-nums">${price.cachedInputPricePer1M}/M</span>
+                    </span>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${darkMode ? "bg-emerald-500/15 text-emerald-200" : "bg-emerald-100 text-emerald-700"}`}>
+                      <span>输出</span>
+                      <span className="font-semibold tabular-nums">${price.outputPricePer1M}/M</span>
+                    </span>
                   </div>
                 </div>
               )) : (
