@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint .",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:backfill:usage-provider-email": "node scripts/backfill-usage-provider-email.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

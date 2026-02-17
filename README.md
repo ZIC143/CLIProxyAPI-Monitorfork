@@ -9,6 +9,8 @@
 
 ## 功能
 - `/api/sync` 拉取上游用量数据并去重入库（支持 GET/POST，有鉴权）
+- `/api/sync` 默认不预先更新 `auth_file_mappings`；仅当本次同步检测到 `auth_index` 未命中时，才触发一次补救更新
+- 当 `auth_index` 仍未命中时，查询会用 `usage.source`（API Key）回退匹配提供商映射；无法匹配时显示“未知渠道”
 - 前端表单可配置模型单价，亦支持从 models.dev 自动拉取价格信息（ [#17 @ZIC143](https://github.com/sxjeru/CLIProxyAPI-Monitor/pull/17) ）
 - 前端图表：日粒度折线图、小时粒度柱状图、模型费用列表等，支持时间范围、模型、Key、凭证筛选
 - 访问密码保护

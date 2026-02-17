@@ -44,7 +44,8 @@ function setCached(key: string, value: ChannelsPayload) {
 }
 
 type ChannelAggRow = {
-  channel: string | null;
+  provider: string | null;
+  email: string | null;
   requests: number;
   tokens: number;
   inputTokens: number;
@@ -55,7 +56,8 @@ type ChannelAggRow = {
 };
 
 type ChannelModelAggRow = {
-  channel: string | null;
+  provider: string | null;
+  email: string | null;
   model: string;
   requests: number;
   inputTokens: number;
@@ -124,7 +126,8 @@ export async function GET(request: Request) {
     // Fetch aggregated channel statistics
     const channelAggRows: ChannelAggRow[] = await db
       .select({
-        channel: usageRecords.source,
+        provider: usageRecords.provider,
+        email: usageRecords.email,
         requests: sql<number>`count(*)`,
         tokens: sql<number>`sum(${usageRecords.totalTokens})`,
         inputTokens: sql<number>`sum(${usageRecords.inputTokens})`,
@@ -135,13 +138,14 @@ export async function GET(request: Request) {
       })
       .from(usageRecords)
       .where(whereClause)
-      .groupBy(usageRecords.source)
+      .groupBy(usageRecords.provider, usageRecords.email)
       .orderBy(sql`count(*) desc`);
 
     // Fetch channel-model breakdown for cost calculation
     const channelModelAggRows: ChannelModelAggRow[] = await db
       .select({
-        channel: usageRecords.source,
+        provider: usageRecords.provider,
+        email: usageRecords.email,
         model: usageRecords.model,
         requests: sql<number>`count(*)`,
         inputTokens: sql<number>`sum(${usageRecords.inputTokens})`,
@@ -151,7 +155,7 @@ export async function GET(request: Request) {
       })
       .from(usageRecords)
       .where(whereClause)
-      .groupBy(usageRecords.source, usageRecords.model);
+      .groupBy(usageRecords.provider, usageRecords.email, usageRecords.model);
 
     // Fetch pricing information
     const priceRows: PriceRow[] = await db.select().from(modelPrices);
@@ -166,8 +170,17 @@ export async function GET(request: Request) {
 
     // Calculate costs per channel
     const channelCostMap = new Map<string, number>();
+    const toChannelKey = (provider: string | null, email: string | null) => {
+      const p = (provider ?? "").trim();
+      const e = (email ?? "").trim();
+      if (p && e) return `${p}/${e}`;
+      if (p) return p;
+      if (e) return e;
+      return "未知渠道";
+    };
+
     for (const row of channelModelAggRows) {
-      const channelKey = row.channel ?? "未知渠道";
+      const channelKey = toChannelKey(row.provider, row.email);
       const cost = estimateCost(
         {
           inputTokens: toNumber(row.inputTokens),
@@ -183,7 +196,7 @@ export async function GET(request: Request) {
 
     // Build response
     const channels = channelAggRows.map((row) => {
-      const channelKey = row.channel ?? "未知渠道";
+      const channelKey = toChannelKey(row.provider, row.email);
       return {
         channel: channelKey,
         requests: toNumber(row.requests),

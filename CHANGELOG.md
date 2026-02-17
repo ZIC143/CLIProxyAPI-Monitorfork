@@ -63,6 +63,11 @@
   - 短句中的”并列”信息改为按需显示：仅在确实发生并列裁决时展示该片段，常规场景不再出现。
   - 同步详情表新增末尾帮助列：用 `?` 按钮替代”悬停查看详情”文案，悬停按钮查看长说明，默认列表更简洁。
 
+- 合并 `sync` 路由与渠道统计分支冲突：
+  - `/api/sync` 保留 `provider/email` 维度映射增强，同时继续使用分块写入，降低大批量同步时的单次 SQL 压力。
+  - 去重键统一切换为 `occurredAt + project + route + model + email`，与当前 `usage_records` 唯一索引保持一致。
+  - 鉴权 cookie 改为直接使用 `cookies()`，移除旧的弱类型导入方式。
+
 ## 2026-03-08
 
 - Explore 页模型图例排序方式现可在浏览器端记忆：
@@ -181,8 +186,34 @@
   - 默认将池大小收敛为 `5`，降低 Vercel 多实例并发下打满数据库连接槽的风险。
 
 
+## 2026-02-18
+
+- 修复 `db:backfill:usage-provider-email` 执行失败：移除脚本对 TypeScript `schema` 的 ESM 直接导入，改为纯 SQL 回填；并增加冲突前去重逻辑，避免触发唯一索引 `usage_records_occurred_project_route_model_email_idx` 报错。
+- 新增数据修复脚本 [scripts/backfill-usage-provider-email.mjs](scripts/backfill-usage-provider-email.mjs)：
+	- 当 `usage_records.auth_index` 有值时，按现有匹配规则（`auth_index` 优先，其次 `email(api-key)`）回填 `provider/email`。
+	- 当 `usage_records.auth_index` 为空时，将 `provider/email` 统一清空。
+	- 新增命令 `pnpm db:backfill:usage-provider-email` 用于执行该修复。
+- 修复同步回填空值问题：`/api/sync` 在 AI Provider 匹配场景下，回填逻辑改为同时支持 `auth_index` 与 `email(api-key)` 匹配 `auth_file_mappings.auth_id`，并避免将 `usage_records.provider/email` 覆盖为空字符串。
+- 同步入库补充映射回填：当 `usage_records.auth_index` 成功匹配 `auth_file_mappings.auth_id` 后，写入 `usage_records.provider = auth_file_mappings.provider`。
+- 同步入库补充邮箱回填：当匹配成功后，写入 `usage_records.email = auth_file_mappings.email`；若 `auth_file_mappings.email` 为空，则回退写入 `auth_file_mappings.name` 到 `usage_records.email`。
+- 查询展示口径调整：`records`/`overview`/`explore` 的“提供商/凭证”改为直接读取 `usage_records.provider` 与 `usage_records.email`，不再在查询阶段回查 `auth_file_mappings`。
+- 新增“渠道统计”页面：添加 [app/channels/page.tsx](app/channels/page.tsx) 并接入侧边栏导航，支持按项目/时间范围查看渠道用量、费用、成功率与分组展开。
+- 渠道接口口径调整：`/api/channels` 改为以 `usage_records.provider` 作为渠道、`usage_records.email` 作为子账号聚合，返回 `provider/email` 组合的 `channel` 字段供前端分组展示。
+
+## 2026-02-17
+
+- 调整 `records` 调用记录表格列宽策略：将“模型 / 密钥 / 凭证”从固定宽度改为与其他列一致的 auto 自适应分配，改善不同分辨率下的列宽一致性。
+- 数据库字段重命名：`usage_records.source` 更名为 `usage_records.email`，并将 `usage_records.channel` 更名为 `usage_records.provider`；同步更新唯一索引与查询索引命名。
+- 同步与查询链路适配新字段：`/api/sync` 去重键改用 `email`，`records/overview/explore/channels` 改为读取 `email/provider` 列；对外筛选参数仍兼容 `source` 命名。
+- 调整 `/api/sync` 流程：刷新时默认不再预先同步 `auth_file_mappings`，仅在检测到本次 `auth_index` 存在未命中时触发一次补救同步，减少无效映射刷新请求。
+- 增强映射补救来源：补充拉取 `openai-compatibility`、`gemini-api-key`、`codex-api-key`、`claude-api-key` 四类管理配置，并按规则写入 `auth_file_mappings`，用于后续匹配兜底。
+- 新增同步可观测字段：`/api/sync` 返回 `authFilesSyncTriggered`、`unmatchedAuthIndexesBefore`、`unmatchedAuthIndexesAfter`，便于判断未命中补救是否触发及效果。
+- 统一凭证回退匹配口径：`records`/`overview`/`explore` 在 `auth_index` 未命中时增加 `usage.source(api-key)` 对 `auth_file_mappings.auth_id` 的二次匹配，并将最终未命中统一显示为“未知渠道”。
+
 ## 2026-02-16
 
+- 调整项目 ID 生成算法：由 `sha256(rootUrl).slice(0,12)` 改为 `p_ + sha1(rootUrl).slice(0,10)`，并统一通过 `normalizeRootUrl` 归一化后计算，便于跨环境保持可读且稳定的项目标识。
+- 修复迁移认证失败（`28P01`）：将 `.env.local` 的 `DATABASE_URL` 更新为当前有效实例并与 `.env` 保持一致，避免迁移脚本按加载优先级读取到旧库连接串导致密码校验失败。
 - 修复 `/api/sync` 的凭证映射同步仅覆盖主项目问题：`auth_file_mappings` 改为遍历 `CLIPROXY_API_BASE_URLS` 全量项目（含项目二）拉取并合并写入，确保多项目凭证名称可见。
 - 新增 `auth-files` 多项目部分失败告警：当仅部分项目拉取失败时返回 `authFilesWarning` 但不中断 usage 同步，降低单项目故障对整体同步的影响。
 - 修复构建前迁移脚本的连接串读取时机：改为在运行阶段加载 `.env*` 后再初始化数据库连接，避免因顶层 `createPool()` 提前执行导致 `missing_connection_string` 报错。

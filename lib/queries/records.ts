@@ -1,7 +1,7 @@
 import * as DrizzleOrm from "drizzle-orm";
 const { and, asc, desc, eq, gte, lte, sql } = DrizzleOrm as any;
 import { db } from "@/lib/db/client";
-import { authFileMappings, modelPrices, usageRecords } from "@/lib/db/schema";
+import { modelPrices, usageRecords } from "@/lib/db/schema";
 import { estimateCost, priceMap } from "@/lib/usage";
 
 export type UsageRecordRow = {
@@ -10,7 +10,7 @@ export type UsageRecordRow = {
   route: string;
   source: string;
   credentialName: string;
-  provider: string | null;
+  provider: string;
   model: string;
   totalTokens: number;
   inputTokens: number;
@@ -82,7 +82,15 @@ const COST_EXPR = sql<number>`coalesce(
   0
 )`;
 
-const CREDENTIAL_NAME_EXPR = sql<string>`coalesce(nullif(${authFileMappings.name}, ''), nullif(${usageRecords.source}, ''), '-')`;
+const CREDENTIAL_NAME_EXPR = sql<string>`coalesce(
+  nullif(${usageRecords.email}, ''),
+  '未知渠道'
+)`;
+
+const PROVIDER_EXPR = sql<string>`coalesce(
+  nullif(${usageRecords.provider}, ''),
+  '未知渠道'
+)`;
 
 function getSortExpr(sortField: SortField): any {
   switch (sortField) {
@@ -216,9 +224,9 @@ export async function getUsageRecords(input: {
       id: usageRecords.id,
       occurredAt: usageRecords.occurredAt,
       route: usageRecords.route,
-      source: usageRecords.source,
+      source: usageRecords.email,
       credentialName: CREDENTIAL_NAME_EXPR,
-      provider: authFileMappings.provider,
+      provider: PROVIDER_EXPR,
       model: usageRecords.model,
       totalTokens: usageRecords.totalTokens,
       inputTokens: usageRecords.inputTokens,
@@ -229,7 +237,6 @@ export async function getUsageRecords(input: {
       cost: selectedCostExpr
     })
     .from(usageRecords)
-    .leftJoin(authFileMappings, eq(usageRecords.authIndex, authFileMappings.authId))
     .where(where)
     .orderBy(
       ...sortKeys.map(k => {
@@ -317,7 +324,6 @@ export async function getUsageRecords(input: {
       db
         .select({ source: CREDENTIAL_NAME_EXPR })
         .from(usageRecords)
-        .leftJoin(authFileMappings, eq(usageRecords.authIndex, authFileMappings.authId))
         .where(where)
         .groupBy(CREDENTIAL_NAME_EXPR)
         .orderBy(CREDENTIAL_NAME_EXPR)
@@ -326,7 +332,7 @@ export async function getUsageRecords(input: {
     filters = {
       models: modelRows.map((row) => row.model),
       routes: routeRows.map((row) => row.route),
-      sources: sourceRows.map((row) => row.source).filter((name): name is string => Boolean(name) && name !== "-")
+      sources: sourceRows.map((row) => row.source).filter((name): name is string => Boolean(name) && name !== "未知渠道")
     };
   }
 

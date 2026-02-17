@@ -17,7 +17,8 @@ export const usageRecords = pgTable(
     syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
     project: text("project").notNull().default(""),
     route: text("route").notNull(),
-    source: text("source").notNull().default(""),
+    provider: text("provider").notNull().default(""),
+    email: text("email").notNull().default(""),
     authIndex: text("auth_index"),
     model: text("model").notNull(),
     totalTokens: integer("total_tokens").notNull(),
@@ -29,7 +30,7 @@ export const usageRecords = pgTable(
     raw: text("raw").notNull()
   },
   (table) => ({
-    uniq: uniqueIndex("usage_records_occurred_project_route_model_source_idx").on(table.occurredAt, table.project, table.route, table.model, table.source)
+    uniq: uniqueIndex("usage_records_occurred_project_route_model_email_idx").on(table.occurredAt, table.project, table.route, table.model, table.email)
   })
 );
 

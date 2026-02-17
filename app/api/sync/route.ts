@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import * as nextHeaders from "next/headers";
-import * as DrizzleOrm from "drizzle-orm";
+import { cookies } from "next/headers";
+import { eq, inArray, sql } from "drizzle-orm";
 import { config, assertEnv } from "@/lib/config";
 import { db } from "@/lib/db/client";
 import { authFileMappings, usageRecords } from "@/lib/db/schema";
 import { toAuthFileMappings, type AuthFileMappingInsert } from "@/lib/auth-files";
 import { parseUsagePayload, toUsageRecords } from "@/lib/usage";
-
-const { eq, sql } = DrizzleOrm as any;
 
 export const runtime = "nodejs";
 
@@ -75,7 +73,7 @@ async function isAuthorized(request: Request) {
 
   // 检查用户的 dashboard cookie（用于前端调用）
   if (PASSWORD) {
-    const cookieStore = await (nextHeaders as any).cookies();
+    const cookieStore = await cookies();
     const authCookie = cookieStore.get(COOKIE_NAME);
     if (authCookie) {
       const expectedToken = await hashPassword(PASSWORD);
@@ -93,9 +91,210 @@ function shouldReplaceAuthMapping(existing: AuthFileMappingInsert | undefined, i
   return false;
 }
 
+function mergeAuthMapping(existing: AuthFileMappingInsert | undefined, incoming: AuthFileMappingInsert): AuthFileMappingInsert {
+  if (!existing) return incoming;
+
+  const updatedAt = (() => {
+    if (existing.updatedAt && incoming.updatedAt) {
+      return existing.updatedAt > incoming.updatedAt ? existing.updatedAt : incoming.updatedAt;
+    }
+    return existing.updatedAt ?? incoming.updatedAt ?? null;
+  })();
+
+  return {
+    authId: existing.authId,
+    name: incoming.name?.trim() ? incoming.name : existing.name,
+    label: incoming.label?.trim() ? incoming.label : existing.label,
+    provider: incoming.provider?.trim() ? incoming.provider : existing.provider,
+    source: incoming.source?.trim() ? incoming.source : existing.source,
+    email: incoming.email?.trim() ? incoming.email : existing.email,
+    updatedAt,
+    syncedAt: incoming.syncedAt ?? existing.syncedAt
+  };
+}
+
+function toProviderMappings(payload: unknown, providerType: "gemini" | "codex" | "claude" | "openai-compatibility", pulledAt: Date): AuthFileMappingInsert[] {
+  const obj = payload && typeof payload === "object" ? payload as Record<string, unknown> : null;
+  if (!obj) return [];
+
+  if (providerType === "openai-compatibility") {
+    const items = Array.isArray(obj["openai-compatibility"]) ? (obj["openai-compatibility"] as unknown[]) : [];
+    const rows: AuthFileMappingInsert[] = [];
+
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const node = item as Record<string, unknown>;
+      const providerName = String(node.name ?? "").trim();
+      const baseUrl = String(node["base-url"] ?? "").trim();
+      const keyEntries = Array.isArray(node["api-key-entries"]) ? (node["api-key-entries"] as unknown[]) : [];
+
+      for (const entry of keyEntries) {
+        if (!entry || typeof entry !== "object") continue;
+        const authId = String((entry as Record<string, unknown>)["api-key"] ?? "").trim();
+        if (!authId) continue;
+        rows.push({
+          authId,
+          name: "OpenAI Compatibility",
+          label: null,
+          provider: providerName || null,
+          source: null,
+          email: baseUrl || null,
+          updatedAt: null,
+          syncedAt: pulledAt
+        });
+      }
+    }
+
+    return rows;
+  }
+
+  const keyMap: Record<"gemini" | "codex" | "claude", string> = {
+    gemini: "gemini-api-key",
+    codex: "codex-api-key",
+    claude: "claude-api-key"
+  };
+  const providerNameMap: Record<"gemini" | "codex" | "claude", string> = {
+    gemini: "Gemini API Key",
+    codex: "Codex API KEY",
+    claude: "Claude API KEY"
+  };
+
+  const items = Array.isArray(obj[keyMap[providerType]]) ? (obj[keyMap[providerType]] as unknown[]) : [];
+  const providerName = providerNameMap[providerType as "gemini" | "codex" | "claude"];
+
+  return items
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const node = item as Record<string, unknown>;
+      const authId = String(node["api-key"] ?? "").trim();
+      if (!authId) return null;
+      const baseUrl = String(node["base-url"] ?? "").trim();
+
+      return {
+        authId,
+        name: providerName,
+        label: null,
+        provider: providerName,
+        source: null,
+        email: baseUrl || null,
+        updatedAt: null,
+        syncedAt: pulledAt
+      } as AuthFileMappingInsert;
+    })
+    .filter((row): row is AuthFileMappingInsert => Boolean(row));
+}
+
+async function syncProviderMappings(project: { id: string; baseUrl: string; apiKey: string }, pulledAt: Date) {
+  const endpointTypes = [
+    { path: "openai-compatibility", type: "openai-compatibility" as const },
+    { path: "gemini-api-key", type: "gemini" as const },
+    { path: "codex-api-key", type: "codex" as const },
+    { path: "claude-api-key", type: "claude" as const }
+  ];
+
+  const rows: AuthFileMappingInsert[] = [];
+  let failedEndpoints = 0;
+
+  for (const endpoint of endpointTypes) {
+    const url = `${project.baseUrl.replace(/\/$/, "")}/${endpoint.path}`;
+
+    try {
+      const response = await fetchWithTimeout(url, {
+        headers: {
+          Authorization: `Bearer ${project.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        cache: "no-store"
+      }, AUTH_FILES_TIMEOUT_MS);
+
+      if (!response.ok) {
+        failedEndpoints += 1;
+        console.warn("[sync] provider config fetch non-2xx", {
+          project: project.id,
+          endpoint: endpoint.path,
+          status: response.status
+        });
+        continue;
+      }
+
+      const json = await response.json();
+      rows.push(...toProviderMappings(json, endpoint.type, pulledAt));
+    } catch (error) {
+      failedEndpoints += 1;
+      const isTimeout = error instanceof Error && error.name === "AbortError";
+      console.warn("[sync] provider config fetch failed", {
+        project: project.id,
+        endpoint: endpoint.path,
+        reason: isTimeout ? "timeout" : "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  return { rows, failedEndpoints, attemptedEndpoints: endpointTypes.length };
+}
+
+async function findMissingAuthIndexes(rows: ReturnType<typeof toUsageRecords>) {
+  const authIds = Array.from(
+    new Set(rows.map((row) => row.authIndex?.trim()).filter((value): value is string => Boolean(value)))
+  );
+
+  if (authIds.length === 0) return [] as string[];
+
+  const existingRows = await db
+    .select({ authId: authFileMappings.authId })
+    .from(authFileMappings)
+    .where(inArray(authFileMappings.authId, authIds));
+
+  const existing = new Set(existingRows.map((row) => row.authId));
+  return authIds.filter((id) => !existing.has(id));
+}
+
+async function applyAuthMappingsToRows(rows: ReturnType<typeof toUsageRecords>) {
+  const authIds = Array.from(
+    new Set(
+      rows
+        .flatMap((row) => [row.authIndex?.trim(), row.email?.trim()])
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  if (authIds.length === 0) return rows;
+
+  const mappingRows = await db
+    .select({
+      authId: authFileMappings.authId,
+      provider: authFileMappings.provider,
+      email: authFileMappings.email,
+      name: authFileMappings.name
+    })
+    .from(authFileMappings)
+    .where(inArray(authFileMappings.authId, authIds));
+
+  const mappingMap = new Map(mappingRows.map((row) => [row.authId, row]));
+
+  return rows.map((row) => {
+    const authId = row.authIndex?.trim();
+    const emailAsAuthId = row.email?.trim();
+    const mapping = (authId ? mappingMap.get(authId) : undefined) ?? (emailAsAuthId ? mappingMap.get(emailAsAuthId) : undefined);
+    if (!mapping) return row;
+
+    const mappedProvider = (mapping.provider ?? "").trim();
+    const mappedEmail = (mapping.email ?? "").trim() || (mapping.name ?? "").trim();
+
+    return {
+      ...row,
+      provider: mappedProvider || row.provider,
+      email: mappedEmail || row.email
+    };
+  });
+}
+
 async function syncAuthFileMappings(pulledAt: Date) {
   const mergedRows = new Map<string, AuthFileMappingInsert>();
   let failedProjects = 0;
+  let failedProviderEndpoints = 0;
+  let attemptedProviderEndpoints = 0;
 
   for (const project of config.cliproxyProjects) {
     const authFilesUrl = `${project.baseUrl.replace(/\/$/, "")}/auth-files`;
@@ -119,9 +318,8 @@ async function syncAuthFileMappings(pulledAt: Date) {
       const rows = toAuthFileMappings(json, pulledAt);
       for (const row of rows) {
         const existing = mergedRows.get(row.authId);
-        if (shouldReplaceAuthMapping(existing, row)) {
-          mergedRows.set(row.authId, row);
-        }
+        if (shouldReplaceAuthMapping(existing, row)) mergedRows.set(row.authId, row);
+        else mergedRows.set(row.authId, mergeAuthMapping(existing, row));
       }
     } catch (error) {
       failedProjects += 1;
@@ -131,6 +329,14 @@ async function syncAuthFileMappings(pulledAt: Date) {
         reason: isTimeout ? "timeout" : "error",
         message: error instanceof Error ? error.message : String(error)
       });
+    }
+
+    const providerResult = await syncProviderMappings(project, pulledAt);
+    failedProviderEndpoints += providerResult.failedEndpoints;
+    attemptedProviderEndpoints += providerResult.attemptedEndpoints;
+    for (const row of providerResult.rows) {
+      const existing = mergedRows.get(row.authId);
+      mergedRows.set(row.authId, mergeAuthMapping(existing, row));
     }
   }
 
@@ -143,7 +349,9 @@ async function syncAuthFileMappings(pulledAt: Date) {
     return {
       synced: 0,
       failedProjects,
-      attemptedProjects: config.cliproxyProjects.length
+      attemptedProjects: config.cliproxyProjects.length,
+      failedProviderEndpoints,
+      attemptedProviderEndpoints
     };
   }
 
@@ -168,7 +376,9 @@ async function syncAuthFileMappings(pulledAt: Date) {
   return {
     synced: rows.length,
     failedProjects,
-    attemptedProjects: config.cliproxyProjects.length
+    attemptedProjects: config.cliproxyProjects.length,
+    failedProviderEndpoints,
+    attemptedProviderEndpoints
   };
 }
 
@@ -223,17 +433,38 @@ async function performSync(request: Request) {
   }
 
   let authFilesSynced = 0;
+  let unmatchedAuthIndexesBefore = 0;
+  let unmatchedAuthIndexesAfter = 0;
+  let authFilesSyncTriggered = false;
   let authFilesWarning: string | undefined;
-  try {
-    const authFilesResult = await syncAuthFileMappings(pulledAt);
-    authFilesSynced = authFilesResult.synced;
-    if (authFilesResult.failedProjects > 0) {
-      authFilesWarning = `auth-files partial sync failed (${authFilesResult.failedProjects}/${authFilesResult.attemptedProjects})`;
+
+  if (allRows.length > 0) {
+    const missingBefore = await findMissingAuthIndexes(allRows);
+    unmatchedAuthIndexesBefore = missingBefore.length;
+
+    if (missingBefore.length > 0) {
+      authFilesSyncTriggered = true;
+      try {
+        const authFilesResult = await syncAuthFileMappings(pulledAt);
+        authFilesSynced = authFilesResult.synced;
+
+        const warnings: string[] = [];
+        if (authFilesResult.failedProjects > 0) {
+          warnings.push(`auth-files partial sync failed (${authFilesResult.failedProjects}/${authFilesResult.attemptedProjects})`);
+        }
+        if (authFilesResult.failedProviderEndpoints > 0) {
+          warnings.push(`provider partial sync failed (${authFilesResult.failedProviderEndpoints}/${authFilesResult.attemptedProviderEndpoints})`);
+        }
+        if (warnings.length > 0) authFilesWarning = warnings.join("; ");
+      } catch (error) {
+        const isTimeout = error instanceof Error && error.name === "AbortError";
+        authFilesWarning = isTimeout ? "auth-files sync timed out" : "auth-files sync failed";
+        console.warn("/api/sync auth-files sync failed:", error);
+      }
+
+      const missingAfter = await findMissingAuthIndexes(allRows);
+      unmatchedAuthIndexesAfter = missingAfter.length;
     }
-  } catch (error) {
-    const isTimeout = error instanceof Error && error.name === "AbortError";
-    authFilesWarning = isTimeout ? "auth-files sync timed out" : "auth-files sync failed";
-    console.warn("/api/sync auth-files sync failed:", error);
   }
 
   const primaryProjectId = config.primaryProject?.id || "";
@@ -250,17 +481,22 @@ async function performSync(request: Request) {
       inserted: 0,
       message: "No usage data",
       authFilesSynced,
+      authFilesSyncTriggered,
+      unmatchedAuthIndexesBefore,
+      unmatchedAuthIndexesAfter,
       ...(authFilesWarning ? { authFilesWarning } : {})
     });
   }
 
+  const rowsToInsert = await applyAuthMappingsToRows(allRows);
+
   let inserted = 0;
   try {
-    for (const chunk of chunkArray(allRows, USAGE_INSERT_CHUNK_SIZE)) {
+    for (const chunk of chunkArray(rowsToInsert, USAGE_INSERT_CHUNK_SIZE)) {
       const insertedRows = await db
         .insert(usageRecords)
         .values(chunk)
-        .onConflictDoNothing({ target: [usageRecords.occurredAt, usageRecords.project, usageRecords.route, usageRecords.model, usageRecords.source] })
+        .onConflictDoNothing({ target: [usageRecords.occurredAt, usageRecords.project, usageRecords.route, usageRecords.model, usageRecords.email] })
         .returning({ id: usageRecords.id });
       inserted += insertedRows.length;
     }
@@ -274,7 +510,7 @@ async function performSync(request: Request) {
 
   // Vercel Postgres may return an empty array even when rows are inserted with RETURNING + ON CONFLICT DO NOTHING.
   // Fall back to counting rows synced in this run (identified by the shared pulledAt timestamp) to avoid reporting 0.
-  if (inserted === 0 && allRows.length > 0) {
+  if (inserted === 0 && rowsToInsert.length > 0) {
     const fallback = await db
       .select({ count: sql<number>`count(*)` })
       .from(usageRecords)
@@ -285,8 +521,11 @@ async function performSync(request: Request) {
   return NextResponse.json({
     status: "ok",
     inserted,
-    attempted: allRows.length,
+    attempted: rowsToInsert.length,
     authFilesSynced,
+    authFilesSyncTriggered,
+    unmatchedAuthIndexesBefore,
+    unmatchedAuthIndexesAfter,
     ...(authFilesWarning ? { authFilesWarning } : {})
   });
 }

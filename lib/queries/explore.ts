@@ -76,9 +76,8 @@ export async function getExplorePoints(
   if (opts?.name) {
     whereParts.push(
       sql`coalesce(
-        nullif((select af.name from auth_file_mappings af where af.auth_id = ${usageRecords.authIndex} limit 1), ''),
-        nullif(${usageRecords.source}, ''),
-        '-'
+        nullif(${usageRecords.email}, ''),
+        '未知渠道'
       ) = ${opts.name}`
     );
   }
@@ -87,9 +86,8 @@ export async function getExplorePoints(
   const shouldFilterInvalid = opts?.filterInvalid !== false;
 
   const credentialNameExpr = sql<string>`coalesce(
-    nullif((select af.name from auth_file_mappings af where af.auth_id = ${usageRecords.authIndex} limit 1), ''),
-    nullif(${usageRecords.source}, ''),
-    '-'
+    nullif(${usageRecords.email}, ''),
+    '未知渠道'
   )`;
 
   const zeroTokensWhere = and(...whereParts, sql`${usageRecords.totalTokens} = 0`);
@@ -128,7 +126,7 @@ export async function getExplorePoints(
   const zeroTokensCount = Number(zeroTokensRows?.[0]?.count ?? 0);
   const filters = {
     routes: availableRouteRows.map((row) => row.route).filter(Boolean),
-    names: availableNameRows.map((row) => row.name).filter((name): name is string => Boolean(name) && name !== "-")
+    names: availableNameRows.map((row) => row.name).filter((name): name is string => Boolean(name) && name !== "未知渠道")
   };
 
   if (total <= 0) {

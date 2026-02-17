@@ -122,13 +122,16 @@ const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
   isError: 90
 };
 
-const FIXED_WIDTH_COLUMNS = new Set<ColumnKey>(["model", "route", "credentialName"]);
+const FIXED_WIDTH_COLUMNS = new Set<ColumnKey>();
 
 const COLUMN_MIN_WIDTH = 80;
 const COLUMN_MAX_WIDTH = 420;
 
-const NON_FIXED_CONTENT_MIN_WIDTHS: Record<Exclude<ColumnKey, "model" | "route" | "credentialName">, number> = {
+const NON_FIXED_CONTENT_MIN_WIDTHS: Record<ColumnKey, number> = {
   occurredAt: 150,
+  model: 200,
+  route: 160,
+  credentialName: 160,
   provider: 120,
   totalTokens: 105,
   inputTokens: 96,
@@ -435,19 +438,19 @@ export default function RecordsPage() {
     }
 
     const manualNonFixed: ColumnKey[] = [];
-    const autoNonFixed: Array<Exclude<ColumnKey, "model" | "route" | "credentialName">> = [];
+    const autoNonFixed: ColumnKey[] = [];
 
     for (const key of nonFixedColumns) {
       const setting = columnSettingMap.get(key);
       if (setting?.width !== null && setting?.width !== undefined) {
         manualNonFixed.push(key);
       } else {
-        autoNonFixed.push(key as Exclude<ColumnKey, "model" | "route" | "credentialName">);
+        autoNonFixed.push(key);
       }
     }
 
     for (const key of manualNonFixed) {
-      const minRequired = NON_FIXED_CONTENT_MIN_WIDTHS[key as Exclude<ColumnKey, "model" | "route" | "credentialName">];
+      const minRequired = NON_FIXED_CONTENT_MIN_WIDTHS[key];
       const width = Math.max(getBaseColumnWidth(key), minRequired);
       result.set(key, width);
       usedWidth += width;

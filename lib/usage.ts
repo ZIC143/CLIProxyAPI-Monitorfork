@@ -12,6 +12,8 @@ const tokensSchema = z.object({
 
 const detailSchema = z.object({
   timestamp: z.string().optional(),
+  channel: z.string().optional(),
+  provider: z.string().optional(),
   source: z.string().optional(),
   // 保留 auth_index 原值（字符串或数字），避免历史/异构格式被丢弃
   auth_index: z.union([z.string(), z.number()]).optional(),
@@ -71,7 +73,11 @@ function parseDetailTimestamp(detail: z.infer<typeof detailSchema>, fallback: Da
   return Number.isFinite(date.getTime()) ? date : fallback;
 }
 
-function parseDetailSource(detail: z.infer<typeof detailSchema>) {
+function parseDetailProvider(detail: z.infer<typeof detailSchema>) {
+  return detail.provider?.trim() || detail.channel?.trim() || "";
+}
+
+function parseDetailEmail(detail: z.infer<typeof detailSchema>) {
   return detail.source?.trim() ?? "";
 }
 
@@ -115,7 +121,8 @@ export function toUsageRecords(payload: UsageResponse, pulledAt: Date = new Date
             syncedAt: pulledAt,
             project,
             route,
-            source: parseDetailSource(detail),
+            provider: parseDetailProvider(detail),
+            email: parseDetailEmail(detail),
             authIndex: parseDetailAuthIndex(detail),
             model,
             totalTokens: tokenSlice.totalTokens,

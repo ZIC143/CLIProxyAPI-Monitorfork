@@ -1,7 +1,7 @@
 import * as DrizzleOrm from "drizzle-orm";
 const { and, eq, sql, gte, lte, desc } = DrizzleOrm as any;
 import { db } from "@/lib/db/client";
-import { authFileMappings, modelPrices, usageRecords } from "@/lib/db/schema";
+import { modelPrices, usageRecords } from "@/lib/db/schema";
 import type { UsageOverview, ModelUsage, UsageSeriesPoint } from "@/lib/types";
 import { estimateCost, priceMap } from "@/lib/usage";
 
@@ -27,10 +27,10 @@ type TotalsRow = {
 };
 type DayAggRow = { label: string; requests: number; errors: number; tokens: number };
 type DayModelAggRow = { label: string; model: string; inputTokens: number; outputTokens: number; reasoningTokens: number; cachedTokens: number };
-type HourAggRow = { 
+type HourAggRow = {
   label: string;
   hourStart: Date | string;
-  requests: number; 
+  requests: number;
   tokens: number;
   inputTokens: number;
   outputTokens: number;
@@ -105,13 +105,12 @@ export async function getOverview(
   const filterWhereParts: any[] = [...baseWhereParts];
   if (opts?.model) filterWhereParts.push(eq(usageRecords.model, opts.model));
   if (opts?.route) filterWhereParts.push(eq(usageRecords.route, opts.route));
-  if (opts?.source) filterWhereParts.push(eq(usageRecords.source, opts.source));
+  if (opts?.source) filterWhereParts.push(eq(usageRecords.email, opts.source));
   if (opts?.name) {
     filterWhereParts.push(
       sql`coalesce(
-        nullif((select af.name from auth_file_mappings af where af.auth_id = ${usageRecords.authIndex} limit 1), ''),
-        nullif(${usageRecords.source}, ''),
-        '-'
+        nullif(${usageRecords.email}, ''),
+        '未知渠道'
       ) = ${opts.name}`
     );
   }
@@ -125,7 +124,10 @@ export async function getOverview(
   const tzLiteral = sql.raw(`'${tz}'`);
   const dayExpr = sql`date_trunc('day', ${usageRecords.occurredAt} at time zone ${tzLiteral})`;
   const hourExpr = sql`date_trunc('hour', ${usageRecords.occurredAt} at time zone ${tzLiteral})`;
-  const credentialNameExpr = sql<string>`coalesce(nullif(${authFileMappings.name}, ''), nullif(${usageRecords.source}, ''), '-')`;
+  const credentialNameExpr = sql<string>`coalesce(
+    nullif(${usageRecords.email}, ''),
+    '未知渠道'
+  )`;
 
   const totalsPromise: Promise<TotalsRow[]> = db
     .select({
@@ -223,16 +225,15 @@ export async function getOverview(
     .orderBy(usageRecords.route);
 
   const availableSourcesPromise: Promise<{ source: string }[]> = db
-    .select({ source: usageRecords.source })
+    .select({ source: usageRecords.email })
     .from(usageRecords)
     .where(baseWhere)
-    .groupBy(usageRecords.source)
-    .orderBy(usageRecords.source);
+    .groupBy(usageRecords.email)
+    .orderBy(usageRecords.email);
 
   const availableNamesPromise: Promise<{ name: string | null }[]> = db
     .select({ name: credentialNameExpr })
     .from(usageRecords)
-    .leftJoin(authFileMappings, eq(usageRecords.authIndex, authFileMappings.authId))
     .where(baseWhere)
     .groupBy(credentialNameExpr)
     .orderBy(credentialNameExpr);
@@ -369,7 +370,7 @@ export async function getOverview(
     models: availableModelsRows.map((r) => r.model).filter(Boolean),
     routes: availableRoutesRows.map((r) => r.route).filter(Boolean),
     sources: availableSourcesRows.map((r) => r.source).filter(Boolean),
-    names: availableNamesRows.map((r) => r.name).filter((name): name is string => Boolean(name) && name !== "-")
+    names: availableNamesRows.map((r) => r.name).filter((name): name is string => Boolean(name) && name !== "未知渠道")
   };
 
   return {

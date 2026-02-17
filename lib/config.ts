@@ -9,7 +9,7 @@ type CliproxyProject = {
   isPrimary: boolean;
 };
 
-function normalizeProjectRoot(raw: string | undefined) {
+function normalizeRootUrl(raw: string | undefined) {
   const value = (raw || "").trim();
   if (!value) return "";
   const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
@@ -33,8 +33,11 @@ function parseCsvEnv(raw: string | undefined) {
     .filter(Boolean);
 }
 
-function buildProjectId(rootUrl: string) {
-  return createHash("sha256").update(rootUrl).digest("hex").slice(0, 12);
+function buildProjectIdFromBaseUrl(raw: string | undefined) {
+  const root = normalizeRootUrl(raw);
+  if (!root) return "";
+  const hash = createHash("sha1").update(root).digest("hex").slice(0, 10);
+  return `p_${hash}`;
 }
 
 function buildCliproxyProjects(): CliproxyProject[] {
@@ -51,13 +54,13 @@ function buildCliproxyProjects(): CliproxyProject[] {
   const seenIds = new Set<string>();
 
   for (let index = 0; index < baseCandidates.length; index += 1) {
-    const rootUrl = normalizeProjectRoot(baseCandidates[index]);
+    const rootUrl = normalizeRootUrl(baseCandidates[index]);
     if (!rootUrl) continue;
 
     const apiKey = (listKeys[index] || fallbackKey || "").trim();
     if (!apiKey) continue;
 
-    const id = buildProjectId(rootUrl);
+    const id = buildProjectIdFromBaseUrl(rootUrl);
     if (seenIds.has(id)) continue;
     seenIds.add(id);
 
