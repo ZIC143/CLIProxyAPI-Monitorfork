@@ -241,7 +241,7 @@ async function findMissingAuthIndexes(rows: ReturnType<typeof toUsageRecords>) {
 
   if (authIds.length === 0) return [] as string[];
 
-  const existingRows = await db
+  const existingRows: Array<{ authId: string }> = await db
     .select({ authId: authFileMappings.authId })
     .from(authFileMappings)
     .where(inArray(authFileMappings.authId, authIds));
@@ -261,7 +261,7 @@ async function applyAuthMappingsToRows(rows: ReturnType<typeof toUsageRecords>) 
 
   if (authIds.length === 0) return rows;
 
-  const mappingRows = await db
+  const mappingRows: Array<{ authId: string; provider: string | null; email: string | null; name: string }> = await db
     .select({
       authId: authFileMappings.authId,
       provider: authFileMappings.provider,

@@ -5,8 +5,6 @@ import { config } from "@/lib/config";
 import { db } from "@/lib/db/client";
 import { modelPrices, usageRecords } from "@/lib/db/schema";
 
-const { inArray, desc } = DrizzleOrm as any;
-
 export const runtime = "nodejs";
 
 const PASSWORD = process.env.PASSWORD || process.env.CLIPROXY_SECRET_KEY || "";
@@ -41,7 +39,7 @@ async function isAuthorized(request: Request) {
 
   // 检查用户的 dashboard cookie（用于前端调用）
   if (PASSWORD) {
-    const cookieStore = await (nextHeaders as any).cookies();
+    const cookieStore = await cookies();
     const authCookie = cookieStore.get(COOKIE_NAME);
     if (authCookie) {
       const expectedToken = await hashPassword(PASSWORD);

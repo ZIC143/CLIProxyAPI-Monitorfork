@@ -252,7 +252,7 @@ export async function getUsageRecords(input: {
 
   let priceLookup: ReturnType<typeof priceMap> | null = null;
   if (!shouldComputeCostInSql) {
-    const priceRows = await db.select().from(modelPrices);
+    const priceRows: Array<typeof modelPrices.$inferSelect> = await db.select().from(modelPrices);
     priceLookup = priceMap(
       priceRows.map((p) => ({
         model: p.model,

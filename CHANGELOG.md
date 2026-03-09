@@ -71,6 +71,15 @@
 - 修复 `records` 查询构建失败：
   - 删除 [lib/queries/records.ts](lib/queries/records.ts) 中重复声明的 `baseWhere`，恢复 `next build` 编译通过。
 
+- 修复 `sync-model-prices` 构建失败：
+  - 删除 [app/api/sync-model-prices/route.ts](app/api/sync-model-prices/route.ts) 中残留的重复 `inArray/desc` 解构，并统一使用 `cookies()`，消除重复定义导致的构建错误。
+
+- 修复 `/api/sync` TypeScript 构建失败：
+  - 为 `findMissingAuthIndexes()` 与 `applyAuthMappingsToRows()` 的查询结果补充显式类型，消除 `row` 隐式 `any` 导致的构建阻断。
+
+- 修复 `records` 查询 TypeScript 构建失败：
+  - 为 [lib/queries/records.ts](lib/queries/records.ts) 中 `modelPrices` 查询结果补充显式类型，消除 `priceRows.map()` 中参数隐式 `any` 的构建错误。
+
 ## 2026-03-08
 
 - Explore 页模型图例排序方式现可在浏览器端记忆：
