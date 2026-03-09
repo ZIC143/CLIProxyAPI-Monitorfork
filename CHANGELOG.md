@@ -68,6 +68,9 @@
   - 去重键统一切换为 `occurredAt + project + route + model + email`，与当前 `usage_records` 唯一索引保持一致。
   - 鉴权 cookie 改为直接使用 `cookies()`，移除旧的弱类型导入方式。
 
+- 修复 `records` 查询构建失败：
+  - 删除 [lib/queries/records.ts](lib/queries/records.ts) 中重复声明的 `baseWhere`，恢复 `next build` 编译通过。
+
 ## 2026-03-08
 
 - Explore 页模型图例排序方式现可在浏览器端记忆：

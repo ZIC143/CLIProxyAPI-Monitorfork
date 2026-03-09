@@ -210,8 +210,6 @@ export async function getUsageRecords(input: {
 
   const primarySortExpr = getSortExpr(primaryField) as any;
   const baseWhere = whereParts.length ? and(...whereParts) : undefined;
-
-  const baseWhere = whereParts.length ? and(...whereParts) : undefined;
   const cursorWhere = buildCursorWhere(primaryKey, cursor, primarySortExpr);
   if (cursorWhere) whereParts.push(cursorWhere);
   const where = whereParts.length ? and(...whereParts) : undefined;
