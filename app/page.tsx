@@ -717,7 +717,7 @@ export default function DashboardPage() {
 
     const run = async () => {
       try {
-        await doSync(true, true, 5000); // 首屏加载使用 5 秒超时
+        await doSync(true, true, 15000); // 首屏加载使用 5 秒超时
         if (typeof window !== "undefined") {
           window.sessionStorage.setItem(autoSyncKey, "1");
         }
