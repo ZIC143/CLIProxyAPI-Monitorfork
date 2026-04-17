@@ -1043,7 +1043,7 @@ export default function RecordsPage() {
           <select
             value={project}
             onChange={(event) => setProject(event.target.value)}
-            className="w-28 rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-sm text-slate-200 hover:border-slate-500"
+            className="min-w-[7rem] max-w-[11rem] rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-sm text-slate-200 hover:border-slate-500"
             title="选择项目"
           >
             <option value="all">全部项目</option>

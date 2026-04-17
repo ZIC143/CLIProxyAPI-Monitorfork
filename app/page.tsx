@@ -1207,7 +1207,7 @@ export default function DashboardPage() {
           <select
             value={project}
             onChange={(event) => setProject(event.target.value)}
-            className={`w-28 rounded-lg border px-2 py-1.5 text-sm transition ${
+            className={`min-w-[7rem] max-w-[11rem] rounded-lg border px-2 py-1.5 text-sm transition ${
               darkMode
                 ? "border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-500"
                 : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"

@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 2026-04-17
+
+- 多项目选择列表改为面向任意数量项目：统一项目标签为”主项目、项目 2、项目 3 ...”，去除原先对前两个项目的特化命名，避免三项目及以上场景下展示不一致。
+- 项目列表接口补充 `isPrimary` 元信息，并同步升级前端项目选项缓存结构，确保各页面可基于统一项目元数据渲染选择器。
+- 仪表盘、调用记录、探索页、渠道页的项目选择框改为自适应宽度，提升三项目及以上时的可用性与布局稳定性。
+## 2026-03-21
+
+- 渠道统计页临时增加”删除当前范围数据”能力：
+  - [app/channels/page.tsx](app/channels/page.tsx) 在渠道组（provider）和子渠道（email）两级新增删除按钮，复用确认弹窗展示当前项目、当前时间范围与预计删除条数，降低误删风险。
+  - [app/api/channels/route.ts](app/api/channels/route.ts) 扩展临时删除预估与执行动作，按当前页面筛选的 `project + 日期范围 + provider/email` 条件删除 `usage_records`，并在删除后清理渠道缓存。
+  - 渠道页成功提示与失败提示同步补齐，删除完成后会自动刷新当前统计结果。
+
+## 2026-03-09
+
 ## 2026-05-21
 
 - 调整 [adapter.js](adapter.js) 的 route 字段映射：
@@ -200,11 +214,18 @@
 
 ## 2026-02-18
 
+- 渠道统计支持主渠道重命名：新增 `PATCH /api/channels` 的 `rename-provider` 动作，可将指定旧渠道名批量更新为新渠道名（写回 `usage_records.provider`）。
+- 渠道页新增“渠道名称编辑”交互：支持在分组头部直接修改并保存渠道名称；同时为子渠道重命名请求显式携带 `rename-email` 动作标识。
+- 渠道页分组口径收敛：`channels` 页面改为严格按 `usage_records.provider` 分组、按 `usage_records.email` 作为子渠道，不再通过 `provider/email` 字符串切分推断，避免 `qwen` 等前缀误归类。
+- 修复子渠道“保存无感”问题：`channels` 页请求改为 `skipCache=1 + no-store`，并在更新条数为 0 时返回明确提示，避免误判已保存。
+- 调整子渠道重命名范围：`PATCH /api/channels` 取消 `project` 过滤，改为按 `provider + oldEmail` 全量覆盖 `usage_records.email`（覆盖该子渠道全部数据）。
+- 渠道统计新增“子渠道临时重命名”能力：在 [app/channels/page.tsx](app/channels/page.tsx) 支持直接编辑子渠道名称，并通过 `/api/channels` 的 `PATCH` 接口写回数据库，覆盖 `usage_records.email`。
+- 新增 `/api/channels` 更新接口：按 `provider + oldEmail (+可选 project)` 批量更新为 `newEmail`，更新后自动清理渠道缓存并返回变更条数。
 - 修复 `db:backfill:usage-provider-email` 执行失败：移除脚本对 TypeScript `schema` 的 ESM 直接导入，改为纯 SQL 回填；并增加冲突前去重逻辑，避免触发唯一索引 `usage_records_occurred_project_route_model_email_idx` 报错。
 - 新增数据修复脚本 [scripts/backfill-usage-provider-email.mjs](scripts/backfill-usage-provider-email.mjs)：
-	- 当 `usage_records.auth_index` 有值时，按现有匹配规则（`auth_index` 优先，其次 `email(api-key)`）回填 `provider/email`。
-	- 当 `usage_records.auth_index` 为空时，将 `provider/email` 统一清空。
-	- 新增命令 `pnpm db:backfill:usage-provider-email` 用于执行该修复。
+  - 当 `usage_records.auth_index` 有值时，按现有匹配规则（`auth_index` 优先，其次 `email(api-key)`）回填 `provider/email`。
+  - 当 `usage_records.auth_index` 为空时，将 `provider/email` 统一清空。
+  - 新增命令 `pnpm db:backfill:usage-provider-email` 用于执行该修复。
 - 修复同步回填空值问题：`/api/sync` 在 AI Provider 匹配场景下，回填逻辑改为同时支持 `auth_index` 与 `email(api-key)` 匹配 `auth_file_mappings.auth_id`，并避免将 `usage_records.provider/email` 覆盖为空字符串。
 - 同步入库补充映射回填：当 `usage_records.auth_index` 成功匹配 `auth_file_mappings.auth_id` 后，写入 `usage_records.provider = auth_file_mappings.provider`。
 - 同步入库补充邮箱回填：当匹配成功后，写入 `usage_records.email = auth_file_mappings.email`；若 `auth_file_mappings.email` 为空，则回退写入 `auth_file_mappings.name` 到 `usage_records.email`。
@@ -224,10 +245,6 @@
 
 ## 2026-02-16
 
-- 调整项目 ID 生成算法：由 `sha256(rootUrl).slice(0,12)` 改为 `p_ + sha1(rootUrl).slice(0,10)`，并统一通过 `normalizeRootUrl` 归一化后计算，便于跨环境保持可读且稳定的项目标识。
-- 修复迁移认证失败（`28P01`）：将 `.env.local` 的 `DATABASE_URL` 更新为当前有效实例并与 `.env` 保持一致，避免迁移脚本按加载优先级读取到旧库连接串导致密码校验失败。
-- 修复 `/api/sync` 的凭证映射同步仅覆盖主项目问题：`auth_file_mappings` 改为遍历 `CLIPROXY_API_BASE_URLS` 全量项目（含项目二）拉取并合并写入，确保多项目凭证名称可见。
-- 新增 `auth-files` 多项目部分失败告警：当仅部分项目拉取失败时返回 `authFilesWarning` 但不中断 usage 同步，降低单项目故障对整体同步的影响。
 - 修复构建前迁移脚本的连接串读取时机：改为在运行阶段加载 `.env*` 后再初始化数据库连接，避免因顶层 `createPool()` 提前执行导致 `missing_connection_string` 报错。
 - 当未配置 `DATABASE_URL/POSTGRES_URL` 时，迁移脚本改为输出提示并跳过迁移（不阻塞构建），提升本地与 CI 场景下的构建容错性。
 - 修复多处 `usageRecords.project` 字段误用（`channels`、`overview`、`sync-model-prices`）：统一改为按 `usageRecords.route` 过滤项目，消除 TypeScript 构建报错并恢复项目筛选能力。
@@ -238,13 +255,6 @@
 - 修复首页仪表盘缺失的项目筛选状态定义：补回 `project` 与 `projectOptions` 状态，消除 `project`/`setProjectOptions` 未定义编译错误并恢复价格同步请求参数。
 - 修复 `records` 页残留的项目筛选状态引用：移除未定义的 `setProject`/`setProjectOptions` 副作用与无用导入，恢复页面编译通过。
 - 修复 `overview` 查询参数类型与接口透传：补回 `project` 类型定义并在 `/api/overview` 中接收/透传该参数，同时将其纳入缓存键，避免类型报错与跨项目缓存串用。
-- 恢复多项目配置能力：`config.ts` 新增 `CLIPROXY_API_BASE_URLS/CLIPROXY_SECRET_KEYS` 逗号列表解析、稳定项目 ID 生成与主项目口径兼容单项目配置。
-- 恢复多项目数据隔离：`usage_records` 增加 `project` 字段并将唯一索引扩展为 `occurred_at + project + route + model + source`，同步补充 `0005_add_project_tracking` 迁移。
-- `/api/sync` 改为按项目逐一拉取并按 `project` 打标写入，且每次同步前回填历史空 `project` 为当前主项目，避免旧数据丢失项目维度。
-- 恢复 `overview/records/explore/channels` 的 `project` 过滤链路，并统一处理 `project=all` 为汇总语义。
-- 恢复前端多项目筛选：仪表盘/调用记录/探索/渠道页统一支持项目选择与本地持久化；`/api/projects` 改为从配置层输出稳定项目列表；`/api/management-url` 固定主项目。
-- 更新文档：补充多项目环境变量说明与 `.env.example` 示例。
-- 调整 `explore` 页项目选择器位置：从上方单独一行移动到“最近 7/14/30 天”按钮行并置于最左侧，减少视线跳转。
 
 ## 2026-02-15
 
@@ -281,10 +291,6 @@
 - 概览 API 增加 `skipCache` 控制，便于在需要时获取最新统计。
 
 ## 2026-02-03
-
-- 修复 `/api/sync` 在大数据量下可能失败的问题：
-  - `auth_file_mappings` 与 `usage_records` 的批量写入改为分块执行，避免单条 SQL 过长或绑定参数过多。
-  - 新增分块配置：`AUTH_FILES_INSERT_CHUNK_SIZE`（默认 `500`）、`USAGE_INSERT_CHUNK_SIZE`（默认 `1000`）。
 
 - 升级开发依赖（`eslint-config-next`、`@types/node`），提升开发体验。
 

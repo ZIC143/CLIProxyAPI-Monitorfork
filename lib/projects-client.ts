@@ -1,11 +1,11 @@
-export type ProjectOption = { id: string; label: string };
+export type ProjectOption = { id: string; label: string; isPrimary?: boolean };
 
 type CachedPayload = {
   expiresAt: number;
   value: ProjectOption[];
 };
 
-const CACHE_KEY = "project_options_cache_v1";
+const CACHE_KEY = "project_options_cache_v2";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 let inflight: Promise<ProjectOption[]> | null = null;
 
@@ -49,7 +49,8 @@ export async function fetchProjectOptions(forceRefresh = false): Promise<Project
     const list = Array.isArray(data?.projects) ? data.projects : [];
     const mapped: ProjectOption[] = list.map((p: any) => ({
       id: String(p.id),
-      label: String(p.label || p.id)
+      label: String(p.label || p.id),
+      isPrimary: Boolean(p.isPrimary)
     }));
     writeCache(mapped);
     return mapped;
