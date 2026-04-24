@@ -22,10 +22,10 @@ export async function GET() {
     .orderBy(asc(usageRecords.project));
 
   const historicalProjects = dbProjects
-    .map((row) => String(row.project || "").trim())
+    .map((row: { project: string }) => String(row.project || "").trim())
     .filter(Boolean)
-    .filter((projectId) => !configuredMap.has(projectId))
-    .map((projectId, index) => ({
+    .filter((projectId: string) => !configuredMap.has(projectId))
+    .map((projectId: string, index: number) => ({
       id: projectId,
       label: `历史项目 ${index + 1}`,
       isPrimary: false
