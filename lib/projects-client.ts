@@ -5,7 +5,7 @@ type CachedPayload = {
   value: ProjectOption[];
 };
 
-const CACHE_KEY = "project_options_cache_v2";
+const CACHE_KEY = "project_options_cache_v3";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 let inflight: Promise<ProjectOption[]> | null = null;
 
